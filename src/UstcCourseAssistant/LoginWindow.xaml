@@ -1,0 +1,6 @@
+<Window x:Class="UstcCourseAssistant.LoginWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf" Title="教务系统登录" Height="760" Width="1120" MinHeight="600" MinWidth="800">
+  <DockPanel>
+    <Border DockPanel.Dock="Top" Background="#F2F6FF" Padding="12"><StackPanel><TextBlock Text="请在此窗口自行完成统一身份认证与短信验证。软件不会读取或记录你的密码和验证码。"/><TextBlock x:Name="StatusText" Foreground="Gray" Margin="0,4,0,0" Text="正在初始化安全浏览器环境…" /></StackPanel></Border>
+    <wv2:WebView2 x:Name="Browser" />
+  </DockPanel>
+</Window>

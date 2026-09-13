@@ -1,0 +1,40 @@
+# Build outputs
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+
+# IDE and user-specific files
+.vs/
+.vscode/
+.idea/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Local .NET tooling and package outputs
+.dotnet/
+.dotnet-cli/
+packages/
+*.nupkg
+*.snupkg
+
+# Published binaries belong in GitHub Releases
+release/
+publish/
+
+# Local runtime and smoke-test data
+tests/smoke-data/
+*.log
+*.tmp
+*.bak
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+

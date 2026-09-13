@@ -1,0 +1,2 @@
+namespace UstcCourseAssistant;
+public partial class App : System.Windows.Application { }
