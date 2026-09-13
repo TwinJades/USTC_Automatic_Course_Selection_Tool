@@ -14,4 +14,4 @@
 
 # Documentation should not dominate GitHub's language bar.
 docs/** linguist-documentation
-docs/architecture/** linguist-generated
+docs/architecture/SYSTEM_OVERVIEW.html linguist-generated -linguist-detectable
