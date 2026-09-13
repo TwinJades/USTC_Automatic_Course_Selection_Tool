@@ -20,6 +20,5 @@ dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks -c Release --
 
 1. 每个提交只处理一个明确问题。
 2. 不要提交 `bin`、`obj`、本机 SDK、运行日志、测试数据或发布二进制。
-3. 界面或业务行为变化应同步更新 `README.md` 和 `VERSION_HISTORY.md`。
+3. 界面或业务行为变化应同步更新 `README.md` 和 `CHANGELOG.md`。
 4. Pull Request 中说明改动目的、用户可见变化和已运行的验证。
-

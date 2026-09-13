@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>USTC 选课助手 · 使用说明</title>
+  <style>
+    :root {
+      --brand: #173f73;
+      --brand-2: #2468c9;
+      --brand-soft: #eaf2ff;
+      --ink: #14263f;
+      --muted: #60718a;
+      --line: #d9e3f0;
+      --surface: #ffffff;
+      --canvas: #f3f6fa;
+      --warn-bg: #fff7d6;
+      --warn-line: #e2b632;
+      --warn-ink: #684d00;
+      --danger: #b4232f;
+      --success: #247b52;
+      --shadow: 0 8px 24px rgba(35, 65, 105, .08);
+      font-family: "Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      background: var(--canvas);
+      color: var(--ink);
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    button, a { font: inherit; }
+
+    button:focus-visible, a:focus-visible, summary:focus-visible {
+      outline: 3px solid rgba(36, 104, 201, .28);
+      outline-offset: 3px;
+    }
+
+    .topbar {
+      background: var(--brand);
+      color: #fff;
+      box-shadow: 0 2px 12px rgba(14, 43, 78, .22);
+    }
+
+    .topbar-inner {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      min-height: 92px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .mark {
+      width: 44px;
+      height: 44px;
+      border-radius: 12px;
+      background: #fff;
+      color: var(--brand-2);
+      display: grid;
+      place-items: center;
+      font-weight: 800;
+      font-size: 24px;
+      box-shadow: inset 0 0 0 3px #b9d4ff;
+      transform: rotate(-3deg);
+    }
+
+    .brand h1 {
+      margin: 0;
+      font-size: 25px;
+      line-height: 1.25;
+      letter-spacing: .02em;
+    }
+
+    .version {
+      margin-top: 4px;
+      color: #cfe0f7;
+      font-size: 13px;
+    }
+
+    .unofficial {
+      padding: 7px 13px;
+      border: 1px solid rgba(255, 255, 255, .22);
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .1);
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .nav-wrap {
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 5;
+    }
+
+    .nav {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto;
+      display: flex;
+      gap: 8px;
+      padding: 10px 0;
+      overflow-x: auto;
+    }
+
+    .nav button {
+      border: 0;
+      border-radius: 9px;
+      padding: 10px 15px;
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-weight: 700;
+      white-space: nowrap;
+      transition: background .15s ease, color .15s ease;
+    }
+
+    .nav button:hover { background: #f0f4f9; color: var(--ink); }
+    .nav button[aria-selected="true"] { background: var(--brand-soft); color: var(--brand-2); }
+
+    main {
+      width: min(1120px, calc(100% - 32px));
+      margin: 28px auto 54px;
+    }
+
+    .view[hidden] { display: none; }
+
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(300px, .75fr);
+      gap: 22px;
+      align-items: stretch;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: var(--shadow);
+    }
+
+    .hero-main { padding: 34px; }
+
+    .eyebrow {
+      color: var(--brand-2);
+      font-weight: 800;
+      letter-spacing: .08em;
+      font-size: 13px;
+      margin-bottom: 8px;
+    }
+
+    .hero h2, .page-title h2 {
+      margin: 0;
+      color: var(--ink);
+      font-size: clamp(28px, 4vw, 42px);
+      line-height: 1.25;
+    }
+
+    .lead {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 17px;
+      max-width: 720px;
+    }
+
+    .statement {
+      margin-top: 22px;
+      border-left: 4px solid var(--brand-2);
+      background: var(--brand-soft);
+      border-radius: 0 10px 10px 0;
+      padding: 13px 16px;
+    }
+
+    .statement strong { display: block; color: var(--brand); margin-bottom: 2px; }
+
+    .hero-side {
+      padding: 25px;
+      background: linear-gradient(145deg, #fff, #f5f9ff);
+    }
+
+    .hero-side h3, .section h3 { margin: 0 0 14px; color: var(--brand); }
+
+    .capabilities {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 9px;
+      margin-top: 8px;
+    }
+
+    .chip {
+      border: 1px solid #cbdcf2;
+      background: #fff;
+      color: #31557e;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .section { margin-top: 22px; padding: 28px; }
+
+    .quick-steps {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      counter-reset: quick;
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .quick-steps li {
+      counter-increment: quick;
+      min-height: 118px;
+      padding: 17px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fbfdff;
+    }
+
+    .quick-steps li::before {
+      content: counter(quick);
+      width: 27px;
+      height: 27px;
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      margin-bottom: 10px;
+      background: var(--brand-2);
+      color: #fff;
+      font-weight: 800;
+    }
+
+    .safety {
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 15px;
+      padding: 21px 23px;
+      border: 1px solid var(--warn-line);
+      border-radius: 13px;
+      background: var(--warn-bg);
+      color: var(--warn-ink);
+    }
+
+    .safety-icon {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #fff;
+      background: #bd8400;
+      font-weight: 900;
+      font-size: 21px;
+    }
+
+    .safety h3 { margin: 0 0 5px; color: #5e4300; }
+    .safety ul { margin: 5px 0 0; padding-left: 1.25em; }
+
+    .actions {
+      margin-top: 22px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 11px;
+    }
+
+    .action {
+      border: 1px solid #b9cee9;
+      border-radius: 9px;
+      padding: 10px 15px;
+      background: #fff;
+      color: var(--brand-2);
+      cursor: pointer;
+      font-weight: 800;
+    }
+
+    .action.primary { background: var(--brand-2); border-color: var(--brand-2); color: #fff; }
+
+    .page-title { margin-bottom: 22px; }
+    .page-title h2 { font-size: 30px; }
+    .page-title p { margin: 7px 0 0; color: var(--muted); }
+
+    .guide-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 18px;
+    }
+
+    .guide-card { padding: 25px; }
+    .guide-card h3 { margin: 0 0 12px; color: var(--brand); font-size: 20px; }
+    .guide-card h4 { margin: 19px 0 6px; color: #294967; }
+    .guide-card p { margin: 7px 0; }
+    .guide-card ul, .guide-card ol { margin: 7px 0; padding-left: 1.35em; }
+    .guide-card li + li { margin-top: 6px; }
+
+    .note {
+      margin-top: 14px;
+      border-radius: 9px;
+      padding: 11px 13px;
+      background: #f2f6fb;
+      color: #435a75;
+    }
+
+    code {
+      padding: 2px 6px;
+      border-radius: 5px;
+      background: #eef3f8;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: .92em;
+      word-break: break-all;
+    }
+
+    details {
+      margin-top: 10px;
+      border: 1px solid var(--line);
+      border-radius: 9px;
+      background: #fbfdff;
+      padding: 0 13px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 800;
+      color: #294967;
+      padding: 10px 0;
+    }
+
+    details p { margin: 0 0 12px; }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 15px;
+    }
+
+    .compare-card { padding: 22px; }
+    .compare-card h3 { margin: 0 0 6px; font-size: 18px; color: var(--brand); }
+    .compare-card p { margin: 0; color: var(--muted); }
+
+    .basis {
+      margin-top: 22px;
+      padding: 22px;
+      border-left: 4px solid var(--success);
+      background: #f0faf5;
+    }
+
+    .basis h3 { margin: 0 0 7px; color: #1b6844; }
+
+    .about-grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr);
+      gap: 18px;
+    }
+
+    .about-card { padding: 27px; }
+    .about-card h3 { margin: 0 0 10px; color: var(--brand); }
+
+    .facts { margin: 0; }
+    .facts div { padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .facts div:last-child { border-bottom: 0; }
+    .facts dt { font-weight: 800; color: #294967; }
+    .facts dd { margin: 2px 0 0; color: var(--muted); }
+
+    footer {
+      width: min(1120px, calc(100% - 32px));
+      margin: 0 auto 28px;
+      color: var(--muted);
+      text-align: center;
+      font-size: 13px;
+    }
+
+    @media (max-width: 900px) {
+      .hero, .about-grid { grid-template-columns: 1fr; }
+      .quick-steps { grid-template-columns: repeat(2, 1fr); }
+    }
+
+    @media (max-width: 680px) {
+      .topbar-inner { min-height: 82px; }
+      .unofficial { display: none; }
+      .brand h1 { font-size: 21px; }
+      main { margin-top: 18px; }
+      .hero-main, .hero-side, .section, .guide-card, .compare-card, .about-card { padding: 20px; }
+      .guide-grid, .comparison, .quick-steps { grid-template-columns: 1fr; }
+      .quick-steps li { min-height: 0; }
+      .safety { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      .nav-wrap, .actions { display: none; }
+      .view[hidden] { display: block; }
+      .view { break-before: page; }
+      .view:first-child { break-before: auto; }
+      body { background: #fff; }
+      .card { box-shadow: none; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-inner">
+      <div class="brand">
+        <div class="mark" aria-hidden="true">✓</div>
+        <div>
+          <h1>USTC 选课助手</h1>
+          <div class="version">当前维护版本 · 以 GitHub Releases 为准</div>
+        </div>
+      </div>
+      <div class="unofficial">学生自制工具</div>
+    </div>
+  </header>
+
+  <div class="nav-wrap">
+    <nav class="nav" role="tablist" aria-label="使用说明导航">
+      <button type="button" role="tab" aria-selected="true" aria-controls="home" data-view="home">首页与快速上手</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="guide" data-view="guide">完整使用说明</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="compare" data-view="compare">相比路线一的改进</button>
+      <button type="button" role="tab" aria-selected="false" aria-controls="about" data-view="about">关于</button>
+    </nav>
+  </div>
+
+  <main>
+    <section id="home" class="view" role="tabpanel" aria-label="首页与快速上手">
+      <div class="hero">
+        <article class="card hero-main">
+          <div class="eyebrow">WINDOWS 本机选课辅助工具</div>
+          <h2>把登录、只读核对与课程监测放在一个清楚的流程里</h2>
+          <p class="lead">适用于中国科学技术大学综合教务系统。支持多课程任务、优先级、只读检查、受控选退课与安全暂停。</p>
+          <div class="statement">
+            <strong>学生自制工具 · 非官方</strong>
+            非官方学生工具，与中国科学技术大学无隶属、合作或授权关系。
+          </div>
+        </article>
+
+        <aside class="card hero-side">
+          <h3>主要能力</h3>
+          <div class="capabilities">
+            <span class="chip">自动识别登录会话</span>
+            <span class="chip">多课程监测</span>
+            <span class="chip">只读检查</span>
+            <span class="chip">可控选课与退课</span>
+            <span class="chip">串行换课</span>
+            <span class="chip">受限制自动登录</span>
+            <span class="chip">异常安全暂停</span>
+            <span class="chip">首次使用引导</span>
+            <span class="chip">关键活动记录</span>
+          </div>
+        </aside>
+      </div>
+
+      <section class="card section">
+        <h3>快速上手</h3>
+        <ol class="quick-steps">
+          <li><strong>打开程序</strong><br>全新用户会看到六步说明；启动后不会自动监测。</li>
+          <li><strong>打开教务系统</strong><br>在独立窗口中登录并识别会话。</li>
+          <li><strong>添加课程任务</strong><br>填写完整教学班代码与必要的冲突旧课。</li>
+          <li><strong>先做只读检查</strong><br>点击“立即检查（不选课）”核对课程与余量。</li>
+          <li><strong>确认后监测</strong><br>核对无误，再勾选真实操作确认并开始。</li>
+        </ol>
+      </section>
+
+      <aside class="safety" aria-label="重要安全提醒">
+        <div class="safety-icon" aria-hidden="true">!</div>
+        <div>
+          <h3>开始监测前请确认</h3>
+          <ul>
+            <li>“开始监测”可能执行真实选课或退课。</li>
+            <li>换课不是原子交换，旧课恢复不能保证成功。</li>
+            <li>程序显示结果后，仍须回到教务系统人工确认最终状态。</li>
+          </ul>
+        </div>
+      </aside>
+
+      <div class="actions">
+        <button class="action primary" type="button" data-open-view="guide">查看完整使用说明</button>
+        <button class="action" type="button" data-open-view="compare">查看相比路线一的改进</button>
+      </div>
+    </section>
+
+    <section id="guide" class="view" role="tabpanel" aria-label="完整使用说明" hidden>
+      <header class="page-title">
+        <div class="eyebrow">完整使用说明</div>
+        <h2>按实际使用阶段查找信息</h2>
+        <p>这里收纳详细设置和异常处理。真实操作的总风险提醒只在首页集中展示。</p>
+      </header>
+
+      <div class="guide-grid">
+        <article class="card guide-card">
+          <h3>1. 界面与任务</h3>
+          <h4>主要区域</h4>
+          <ul>
+            <li><strong>登录状态：</strong>显示内部学生编号、开放选课轮次和会话提示。</li>
+            <li><strong>任务监测：</strong>维护课程任务、运行设置并执行只读检查或监测。</li>
+            <li><strong>活动记录：</strong>默认查看关键事件；切换“全部记录”可查看最近 14 天的完整脱敏运行信息。</li>
+            <li><strong>调试工具：</strong>包含“课程影子”和“单门受控操作”。</li>
+            <li><strong>账号与安全：</strong>管理可选密码保存和自动登录。</li>
+          </ul>
+
+          <h4>配置任务</h4>
+          <ul>
+            <li>点击“添加课程”后会新增一行，并把光标放入教学班代码。代码格和冲突旧课格单击即可直接输入，不需要先选中整行。</li>
+            <li>教学班代码必须填写完整，例如 <code>001683EX.01</code>；“启用”复选框单击一次即可切换。</li>
+            <li>数字越小优先级越高；可用“优先级上移/下移”调整。</li>
+            <li>只启用确实准备监测的任务。</li>
+            <li>冲突旧课填写你明确允许退掉的完整教学班代码；多个代码用逗号分隔，没有则留空。</li>
+            <li>点击左侧空白行头或只读单元格可选中整行；此时按 <code>Delete</code> 可删除任务。在输入框内按 <code>Delete</code> 只会删除文字。</li>
+            <li>可配置检查间隔、运行时段和可选的周期随机抖动（±1/3）。运行时段支持跨午夜。</li>
+          </ul>
+
+          <h4>新手指引与活动记录</h4>
+          <p>只有完全没有旧偏好、任务、日志或浏览器资料的新用户会在首次打开时自动看到指引。指引只通过“上一步 / 下一步 / 跳过 / 完成”移动，不会替你打开网页、添加课程、勾选确认或启动监测。之后可点击左下角圆形问号重新查看。</p>
+          <p>活动记录默认显示验证、监测开始与停止、真实选课/退课/恢复等关键事件；真实操作整行加粗。需要排查详细过程时，再点击“全部记录”。关键和全部视图分别缓存只读文档，切换时不会重新生成全部文字行，并可跨越多行连续选择复制。</p>
+
+          <h4>两种检查方式</h4>
+          <p><strong>立即检查（不选课）</strong>固定为只读，用于核对目标、余量、已选状态和冲突课匹配。</p>
+          <p><strong>开始监测</strong>会在满足条件时执行真实操作，需要黄色区域确认和二次确认弹窗。</p>
+        </article>
+
+        <article class="card guide-card">
+          <h3>2. 登录与安全</h3>
+          <ul>
+            <li>程序启动时只显示主窗口；点击“打开教务系统”后才显示独立教务窗口。</li>
+            <li>正常登录后会自动识别只读会话，也可点击“验证只读会话”重试。</li>
+            <li>保存账号密码是可选功能，自动登录默认关闭；保存密码不会顺带开启自动登录。</li>
+            <li>账号保存在本机普通偏好中；密码只保存到当前 Windows 用户的 Windows 凭据管理器。</li>
+            <li>自动登录只处理 USTC 教务登录入口和统一身份认证的正常账号密码流程，每次登录流程最多提交一次。</li>
+            <li>遇到短信、验证码、OTP、新设备或二次认证时，自动提交会停止，由本人完成。</li>
+            <li>登录成功只恢复会话识别，不会自动开始或恢复任务监测。</li>
+          </ul>
+
+          <div class="note"><strong>主动退出：</strong>点击“退出教务登录”后，本次运行会抑制自动登录。需要恢复时，在“账号与安全”中先取消、再重新勾选自动登录。</div>
+        </article>
+
+        <article class="card guide-card">
+          <h3>3. 真实操作与异常处理</h3>
+          <h4>选课、退课与换课</h4>
+          <ul>
+            <li>单门受控操作必须先执行只读预检查，再勾选确认并通过二次弹窗。</li>
+            <li>任务换课严格串行执行“退旧课 → 选目标课 → 目标失败时恢复旧课”。</li>
+            <li>每个写请求只提交一次；响应不确定时不会猜测失败后重复提交。</li>
+          </ul>
+
+          <h4>网络、休眠与安全暂停</h4>
+          <p>监测计时器若因休眠、Modern Standby 或系统长时间停顿而明显晚于计划触发，会在发送任何请求前暂停，避免短暂唤醒时继续监测。</p>
+          <p>尚未开始真实写入时，纯读取网络超时会进入等待；网络恢复后程序只做一次只读会话验证，确认学生身份和开放轮次一致后，从下一轮继续，不重放中断的读取请求。认证失效、身份或轮次不一致、状态读取失败会保持暂停。</p>
+          <p>选课、退课或恢复请求已经发送或可能发送时，结果视为不确定，禁止自动重试或恢复，必须由本人核对。</p>
+
+          <h4>退旧课后的唯一受限恢复</h4>
+          <p>只有程序已经确认旧课退课成功，并能证明目标课请求从未开始时，网络恢复后才会先只读核对账号、轮次、目标课未选和旧课未选。全部一致时可串行尝试一次恢复旧课；无论恢复成功、失败或结果不确定，程序都会继续暂停并要求人工确认。</p>
+
+          <h4>红色中断保护</h4>
+          <ol>
+            <li>不要立即重复点击或重新启动监测。</li>
+            <li>登录教务系统，点击保护区中的只读核对操作。</li>
+            <li>根据显示结果回到教务网页人工处理或确认。</li>
+            <li>确认实际状态清楚后，再明确解除保护。</li>
+          </ol>
+
+          <h4>开机启动、合盖与电源设置</h4>
+          <p>开机启动默认关闭；启用后也只打开程序，不自动监测。本应用不会读取或修改 Windows 合盖动作和全局电源计划，也不提供“保持唤醒”功能。电脑真正进入睡眠后程序无法继续检查；恢复后，明显延迟的监测计时器会先暂停。</p>
+        </article>
+
+        <article class="card guide-card">
+          <h3>4. 数据、隐私与常见问题</h3>
+          <h4>本机保存位置</h4>
+          <p>普通数据位于：</p>
+          <p><code>%LOCALAPPDATA%\USTC Course Assistant Route2</code></p>
+          <ul>
+            <li><code>preferences.json</code>：普通偏好和账号文字，不含密码。</li>
+            <li><code>automation-settings.json</code>：课程任务和运行设置，带备份恢复。</li>
+            <li><code>activity.jsonl</code>：最近 14 天脱敏活动日志。</li>
+            <li><code>operation-journal.json</code>：真实操作中断保护记录。</li>
+            <li><code>browser-profile</code>：独立 WebView2 浏览器会话数据。</li>
+          </ul>
+          <p>密码位于 Windows 凭据管理器，不在普通数据目录。程序不把密码、验证码、Cookie、登录令牌或完整服务器响应写入配置和日志。</p>
+
+          <h4>安全清理</h4>
+          <ol>
+            <li>确认没有真实操作正在执行，也没有待核对的红色中断保护。</li>
+            <li>在“账号与安全”点击“删除已保存密码”。</li>
+            <li>关闭程序。</li>
+            <li>使用文件资源管理器将上述数据目录<strong>移入回收站</strong>；不要使用绕过回收站的永久删除方式。</li>
+          </ol>
+
+          <h4>常见问题</h4>
+          <details>
+            <summary>状态显示“等待运行时段”怎么办？</summary>
+            <p>当前时间不在设置的开始—结束范围内。程序保持等待；检查时段设置，或到达时段后观察。顶部黄色圆点属于正常等待提示。</p>
+          </details>
+          <details>
+            <summary>为什么登录成功后没有自动监测？</summary>
+            <p>这是既定安全边界。登录只恢复会话识别；真实监测始终需要本人勾选黄色确认并点击“开始监测”。</p>
+          </details>
+          <details>
+            <summary>为什么自动登录停止了？</summary>
+            <p>可能检测到验证页面、页面未在有限时间内准备好、凭据错误，或你主动退出后仍处于抑制状态。按页面提示由本人继续；主动退出的抑制需取消再重新勾选自动登录。</p>
+          </details>
+          <details>
+            <summary>出现“结果不确定”或红色保护怎么办？</summary>
+            <p>不要重复提交。先通过只读核对获取当前状态，再回到教务系统人工确认；处理完成后才解除保护。</p>
+          </details>
+        </article>
+      </div>
+
+      <div class="actions">
+        <button class="action" type="button" data-open-view="home">返回简洁首页</button>
+      </div>
+    </section>
+
+    <section id="compare" class="view" role="tabpanel" aria-label="相比路线一的改进" hidden>
+      <header class="page-title">
+        <div class="eyebrow">从早期实现到后续完善</div>
+        <h2>相比路线一的改进</h2>
+        <p>路线一是基于 WebView2 页面与 DOM 操作的早期实现和验证方案；路线二在其经验基础上继续完善。两者均为非官方学生工具。</p>
+      </header>
+
+      <div class="comparison">
+        <article class="card compare-card">
+          <h3>更完整的任务管理</h3>
+          <p>路线二完善了多课程启用状态、优先级、冲突旧课、运行时段、周期抖动及高低优先级冲突处理。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>独立且可观察的教务窗口</h3>
+          <p>主程序与教务系统保持两个独立窗口；用户可以直接观察校方页面，并随时从主程序重新打开教务窗口。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>结构化只读核对</h3>
+          <p>路线二通过会话桥接和固定请求边界读取轮次、已选课程、可选课程和人数，并提供课程影子与“立即检查（不选课）”。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>单门受控操作</h3>
+          <p>新增精确教学班预检查、逐次确认、有限结果查询和最终已选状态复核，用于明确的一次选课或退课。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>统一真实操作保护</h3>
+          <p>任务引擎与单门操作共用非阻塞写入保护；单实例机制避免两个路线二进程同时运行和提交。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>中断与不确定结果处理</h3>
+          <p>真实流程按步骤记录。崩溃、断电、取消或结果不确定后会锁定新写入，要求先读取实际状态并人工处理；只有可证明目标请求从未开始的退课中断，才允许严格核对后尝试一次恢复旧课。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>计时与网络恢复边界</h3>
+          <p>明显延迟的计时器会在请求前暂停；纯读取超时仅在网络恢复并通过一次会话核对后从下一轮继续。任何可能已发送的真实写入仍保持暂停，不会重复提交。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>配置与本地记录增强</h3>
+          <p>任务配置采用原子替换和备份恢复；活动日志脱敏并只保留最近 14 天。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>受限制的自动登录</h3>
+          <p>密码可选保存在 Windows 凭据管理器；自动登录只处理允许域名的正常表单，遇到验证立即交由本人。</p>
+        </article>
+        <article class="card compare-card">
+          <h3>更保守的启动行为</h3>
+          <p>程序启动和可选开机启动都只打开主界面，不会自动开始监测；登录成功同样不会启动或恢复任务。</p>
+        </article>
+      </div>
+
+      <aside class="card basis">
+        <h3>对比依据与边界</h3>
+        <p>以上内容来自路线一与路线二源码、项目 README、版本记录及路线二交接文档。路线二减少了对页面切换和页面文字判断的依赖，但仍依赖校方系统、网络和未公开接口；它不代表官方支持，也不能保证换课或旧课恢复成功。</p>
+      </aside>
+
+      <div class="actions">
+        <button class="action" type="button" data-open-view="home">返回简洁首页</button>
+        <button class="action primary" type="button" data-open-view="guide">查看完整使用说明</button>
+      </div>
+    </section>
+
+    <section id="about" class="view" role="tabpanel" aria-label="关于与非官方声明" hidden>
+      <header class="page-title">
+        <div class="eyebrow">关于</div>
+        <h2>学生自制 · 非官方</h2>
+        <p>本页集中说明软件身份、适用范围和重要边界。</p>
+      </header>
+
+      <div class="about-grid">
+        <article class="card about-card">
+          <h3>非官方声明</h3>
+          <p><strong>非官方学生工具，与中国科学技术大学无隶属、合作或授权关系。</strong></p>
+          <p>软件以 MIT License 免费开源发布。页面中普通字体出现学校名称，仅用于说明适用系统，不使用或模仿学校校徽、书法校名或官方组合标志。</p>
+          <p>使用者应遵守学校规定并自行确认所有真实操作结果。本工具提供辅助流程和保护机制，但不作“绝对安全”“保证成功”或“零风险”承诺。</p>
+        </article>
+
+        <aside class="card about-card">
+          <h3>版本信息</h3>
+          <dl class="facts">
+            <div><dt>软件</dt><dd>USTC 选课助手 · 路线二</dd></div>
+            <div><dt>版本</dt><dd>以 GitHub Releases 为准</dd></div>
+            <div><dt>平台</dt><dd>Windows 10/11 x64</dd></div>
+            <div><dt>运行方式</dt><dd>本机单文件应用</dd></div>
+            <div><dt>网络边界</dt><dd>仅用于本人正常访问校方教务与认证系统</dd></div>
+          </dl>
+        </aside>
+      </div>
+
+      <div class="actions">
+        <button class="action" type="button" data-open-view="home">返回简洁首页</button>
+      </div>
+    </section>
+  </main>
+
+  <footer>USTC 选课助手 · 学生自制工具 · 非官方</footer>
+
+  <script>
+    (() => {
+      const views = Array.from(document.querySelectorAll('.view'));
+      const tabs = Array.from(document.querySelectorAll('[data-view]'));
+
+      function showView(id, moveFocus = true) {
+        const target = document.getElementById(id) || document.getElementById('home');
+        views.forEach(view => { view.hidden = view !== target; });
+        tabs.forEach(tab => tab.setAttribute('aria-selected', String(tab.dataset.view === target.id)));
+        if (history.replaceState) history.replaceState(null, '', '#' + target.id);
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        if (moveFocus) {
+          const heading = target.querySelector('h2');
+          if (heading) {
+            heading.setAttribute('tabindex', '-1');
+            heading.focus({ preventScroll: true });
+          }
+        }
+      }
+
+      tabs.forEach(tab => tab.addEventListener('click', () => showView(tab.dataset.view)));
+      document.querySelectorAll('[data-open-view]').forEach(button => {
+        button.addEventListener('click', () => showView(button.dataset.openView));
+      });
+
+      // 无论文件地址是否带有旧片段，双击打开时始终先显示简洁首页。
+      showView('home', false);
+    })();
+  </script>
+</body>
+</html>
