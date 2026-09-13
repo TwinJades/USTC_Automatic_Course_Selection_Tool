@@ -16,7 +16,16 @@ Environment.SetEnvironmentVariable(
 
 try
 {
-    RunCheck("界面状态回归", () => RunUiStateRegressionChecks(ReadUiTimingScale()));
+    var skipUi = args.Contains("--skip-ui", StringComparer.OrdinalIgnoreCase);
+    if (skipUi)
+    {
+        Console.WriteLine("[跳过] 界面状态回归（CI 托管环境不提供稳定的 WPF 布局与性能条件）");
+    }
+    else
+    {
+        RunCheck("界面状态回归", RunUiStateRegressionChecks);
+    }
+
     RunCheck("自动登录脚本安全", CheckAutoLoginScriptSafety);
     RunCheck("偏好设置升级兼容", CheckPreferenceUpgradeCompatibility);
     RunCheck("检查间隔抖动边界", CheckIntervalJitterBounds);
@@ -51,20 +60,7 @@ static async Task RunCheckAsync(string name, Func<Task> check)
     await check();
 }
 
-static double ReadUiTimingScale()
-{
-    var raw = Environment.GetEnvironmentVariable("USTC_ROUTE2_UI_TIMING_SCALE");
-    return double.TryParse(
-               raw,
-               System.Globalization.NumberStyles.Float,
-               System.Globalization.CultureInfo.InvariantCulture,
-               out var configured)
-           && configured is >= 1 and <= 10
-        ? configured
-        : 1;
-}
-
-static void RunUiStateRegressionChecks(double timingScale)
+static void RunUiStateRegressionChecks()
 {
     Exception? failure = null;
     var thread = new Thread(() =>
@@ -387,13 +383,13 @@ static void RunUiStateRegressionChecks(double timingScale)
             ((Button)window.FindName("AllActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             window.UpdateLayout();
             switchTimer.Stop();
-            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1 * timingScale),
+            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1),
                 $"两万条活动记录切换到全部记录仍然阻塞过久：{switchTimer.Elapsed.TotalMilliseconds:F0} ms");
             switchTimer.Restart();
             ((Button)window.FindName("ImportantActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             window.UpdateLayout();
             switchTimer.Stop();
-            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1 * timingScale),
+            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1),
                 $"两万条活动记录切回关键记录仍然阻塞过久：{switchTimer.Elapsed.TotalMilliseconds:F0} ms");
             switchTimer.Restart();
             ((Button)window.FindName("AllActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
@@ -401,7 +397,7 @@ static void RunUiStateRegressionChecks(double timingScale)
             ((Button)window.FindName("ImportantActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             window.UpdateLayout();
             switchTimer.Stop();
-            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1.5 * timingScale),
+            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1.5),
                 $"缓存后的关键/全部往返切换仍然阻塞过久：{switchTimer.Elapsed.TotalMilliseconds:F0} ms");
             operationTabs.SelectedIndex = 2;
             advancedTabs.SelectedIndex = 0;
