@@ -11,8 +11,8 @@
 ## 下载与文档
 
 - [下载最新正式版（请选择 ZIP）](https://github.com/TwinJades/USTC_Automatic_Course_Selection_Tool/releases)
-- [完整使用说明](docs/USER_GUIDE.html)
-- [系统架构图](docs/architecture/SYSTEM_OVERVIEW.html)
+- [完整使用说明](https://twinjades.github.io/USTC_Automatic_Course_Selection_Tool/USER_GUIDE.html)
+- [系统架构图](https://twinjades.github.io/USTC_Automatic_Course_Selection_Tool/architecture/SYSTEM_OVERVIEW.html)
 - [版本历史](CHANGELOG.md)
 
 发布附件按 `USTC_Automatic_Course_Selection_Tool_<版本号>.zip` 命名；解压后即可运行。编译产物不提交到源码仓库。
@@ -34,7 +34,7 @@
 4. 添加课程任务，先运行“立即检查（不选课）”。
 5. 核对无误后，再确认并开始监测。
 
-详细的任务配置、登录安全、异常保护和隐私说明请阅读[完整使用说明](docs/USER_GUIDE.html)。
+详细的任务配置、登录安全、异常保护和隐私说明请阅读[完整使用说明](https://twinjades.github.io/USTC_Automatic_Course_Selection_Tool/USER_GUIDE.html)。
 
 ## 开发与离线检查
 

@@ -16,21 +16,21 @@ Environment.SetEnvironmentVariable(
 
 try
 {
-    RunUiStateRegressionChecks();
-    CheckAutoLoginScriptSafety();
-    CheckPreferenceUpgradeCompatibility();
-    CheckIntervalJitterBounds();
-    CheckTimerDelayAndNetworkClassification();
-    CheckAtomicConfigurationRecovery();
-    CheckLogSanitizationAndRetention();
-    await CheckInterruptedOperationProtectionAsync();
-    await CheckStrictInterruptedSwapRecoveryAsync();
-    CheckCorruptJournalRecovery();
-    await NoSeatNeverWritesAsync();
-    await SuccessfulSwapIsStrictlySerialAsync();
-    await FailedTargetRestoresOldCourseAsync();
-    await DuplicateTargetNeverWritesAsync();
-    await HigherPrioritySelectionDisablesConflictingLowerTaskAsync();
+    RunCheck("界面状态回归", () => RunUiStateRegressionChecks(ReadUiTimingScale()));
+    RunCheck("自动登录脚本安全", CheckAutoLoginScriptSafety);
+    RunCheck("偏好设置升级兼容", CheckPreferenceUpgradeCompatibility);
+    RunCheck("检查间隔抖动边界", CheckIntervalJitterBounds);
+    RunCheck("定时延迟与网络分类", CheckTimerDelayAndNetworkClassification);
+    RunCheck("原子配置恢复", CheckAtomicConfigurationRecovery);
+    RunCheck("日志脱敏与保留期", CheckLogSanitizationAndRetention);
+    await RunCheckAsync("中断操作保护", CheckInterruptedOperationProtectionAsync);
+    await RunCheckAsync("严格换课恢复", CheckStrictInterruptedSwapRecoveryAsync);
+    RunCheck("损坏事务记录恢复", CheckCorruptJournalRecovery);
+    await RunCheckAsync("无余量时禁止写入", NoSeatNeverWritesAsync);
+    await RunCheckAsync("成功换课严格串行", SuccessfulSwapIsStrictlySerialAsync);
+    await RunCheckAsync("目标失败时恢复旧课", FailedTargetRestoresOldCourseAsync);
+    await RunCheckAsync("重复目标禁止写入", DuplicateTargetNeverWritesAsync);
+    await RunCheckAsync("高优先级成功后禁用冲突任务", HigherPrioritySelectionDisablesConflictingLowerTaskAsync);
     Console.WriteLine("路线二任务引擎离线场景检查全部通过。");
 }
 catch (Exception ex)
@@ -39,7 +39,32 @@ catch (Exception ex)
     Environment.ExitCode = 1;
 }
 
-static void RunUiStateRegressionChecks()
+static void RunCheck(string name, Action check)
+{
+    Console.WriteLine($"[检查] {name}");
+    check();
+}
+
+static async Task RunCheckAsync(string name, Func<Task> check)
+{
+    Console.WriteLine($"[检查] {name}");
+    await check();
+}
+
+static double ReadUiTimingScale()
+{
+    var raw = Environment.GetEnvironmentVariable("USTC_ROUTE2_UI_TIMING_SCALE");
+    return double.TryParse(
+               raw,
+               System.Globalization.NumberStyles.Float,
+               System.Globalization.CultureInfo.InvariantCulture,
+               out var configured)
+           && configured is >= 1 and <= 10
+        ? configured
+        : 1;
+}
+
+static void RunUiStateRegressionChecks(double timingScale)
 {
     Exception? failure = null;
     var thread = new Thread(() =>
@@ -362,13 +387,13 @@ static void RunUiStateRegressionChecks()
             ((Button)window.FindName("AllActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             window.UpdateLayout();
             switchTimer.Stop();
-            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1),
+            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1 * timingScale),
                 $"两万条活动记录切换到全部记录仍然阻塞过久：{switchTimer.Elapsed.TotalMilliseconds:F0} ms");
             switchTimer.Restart();
             ((Button)window.FindName("ImportantActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             window.UpdateLayout();
             switchTimer.Stop();
-            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1),
+            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1 * timingScale),
                 $"两万条活动记录切回关键记录仍然阻塞过久：{switchTimer.Elapsed.TotalMilliseconds:F0} ms");
             switchTimer.Restart();
             ((Button)window.FindName("AllActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
@@ -376,7 +401,7 @@ static void RunUiStateRegressionChecks()
             ((Button)window.FindName("ImportantActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             window.UpdateLayout();
             switchTimer.Stop();
-            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1.5),
+            Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1.5 * timingScale),
                 $"缓存后的关键/全部往返切换仍然阻塞过久：{switchTimer.Elapsed.TotalMilliseconds:F0} ms");
             operationTabs.SelectedIndex = 2;
             advancedTabs.SelectedIndex = 0;
