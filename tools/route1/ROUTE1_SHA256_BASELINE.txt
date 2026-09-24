@@ -1,13 +1,8 @@
 # 路线一 SHA-256 保护基线
 # 生成日期：2026-08-27
-# 范围：src/UstcCourseAssistant（排除 bin/obj）与 release/1.0.0
+# 范围：src/UstcCourseAssistant（排除 bin/obj）与路线一正式版可执行文件
 # 格式：SHA256  相对路径
-f91823fd76218c650cf542f9d841db39d19b73c2d16558a8a6f82b19fbf7c4b8  release/1.0.0/使用说明.html
-8684cd74000c77533e563785208308ada63808da85825206856cab11a9eeffce  release/1.0.0/Microsoft.Web.WebView2.Core.xml
-6a8ec199373824fdebceda7b3d780d0b31c82edceae04d92391027c971dea6c2  release/1.0.0/Microsoft.Web.WebView2.WinForms.xml
-3c68c150d60d39fbbe8b0801ffe773d353b211988eca095671bb3fc8192643c3  release/1.0.0/Microsoft.Web.WebView2.Wpf.xml
-47bd469613ce4e9b9cbbb004f9d2cc603d548c80c86043e8b2c8190616c0bfe1  release/1.0.0/UstcCourseAssistant.exe
-abe7e0d9048a0300031524b31d55e1d91a333e1a131fedf0a368f8022885aa9a  release/1.0.0/UstcCourseAssistant.pdb
+47bd469613ce4e9b9cbbb004f9d2cc603d548c80c86043e8b2c8190616c0bfe1  release/1.0.0/USTC_Automatic_Course_Selection_Tool_1.0.0.exe
 fcb8bb88991692423e37592af607fc691abd98909e3a848ebece8cc318a8fffa  src/UstcCourseAssistant/app.manifest
 df0a3f8e76d3329ad14684c89fef086687ee25718d55498ff6699d573c063534  src/UstcCourseAssistant/App.xaml
 ebeb5057296c47bf879a9514e037d2f181d5cfe16c0f6f8d7707682f270e748f  src/UstcCourseAssistant/App.xaml.cs

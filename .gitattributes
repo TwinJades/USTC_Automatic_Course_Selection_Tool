@@ -12,3 +12,6 @@
 *.dll binary
 *.pdb binary
 
+# Documentation should not dominate GitHub's language bar.
+docs/** linguist-documentation
+docs/architecture/SYSTEM_OVERVIEW.html linguist-generated -linguist-detectable

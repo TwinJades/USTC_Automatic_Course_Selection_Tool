@@ -6,10 +6,10 @@
 
 路线一（内置网页页面操作）已经由用户验收并作为正式版发布：
 
-- 正式可执行文件：`release/1.0.0/UstcCourseAssistant.exe`
-- 面向普通用户的说明：`release/1.0.0/使用说明.html`
+- 正式可执行文件：`release/1.0.0/USTC_Automatic_Course_Selection_Tool_1.0.0.exe`
+- 面向普通用户的说明：`docs/USER_GUIDE.html`
 - 路线一源码：`src/UstcCourseAssistant/`
-- 路线一版本历史：`VERSION_HISTORY.md`
+- 路线一版本历史：`CHANGELOG.md`
 - 保留的最后测试构建：`release/0.2.2/`
 
 路线一源码与 `release/1.0.0` **不得修改、覆盖、移动或删除**。路线二必须作为独立项目开发，例如 `route2/` 或 `src/UstcCourseAssistant.Route2/`。不要让路线二的实验性代码影响路线一的可用性。
@@ -177,7 +177,7 @@
 已经完成：
 
 - `pyustc_repo/` 已从公开仓库恢复，并确认当前提交为交接时指定的 `f16d946`。
-- 已建立路线一保护基线：`ROUTE1_SHA256_BASELINE.txt`；可运行 `Verify-Route1Baseline.ps1` 复核。
+- 已建立路线一保护基线：`tools/route1/ROUTE1_SHA256_BASELINE.txt`；可运行 `tools/route1/Verify-Route1Baseline.ps1` 复核。
 - 已创建独立工程：`src/UstcCourseAssistant.Route2/`，未引用或修改路线一源码。
 - 已实现独立 WebView2 手动登录窗口、Cookie 到内存 `CookieContainer` 的会话桥接、认证失效判断。
 - 已实现内部学生编号识别和 `open-turns` 只读验证。

@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
-$workspace = $PSScriptRoot
-$baselinePath = Join-Path $workspace "ROUTE1_SHA256_BASELINE.txt"
+$workspace = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$baselinePath = Join-Path $PSScriptRoot "ROUTE1_SHA256_BASELINE.txt"
 $failures = @()
 
 foreach ($line in Get-Content -LiteralPath $baselinePath) {

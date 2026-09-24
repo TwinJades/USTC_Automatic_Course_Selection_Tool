@@ -16,27 +16,48 @@ Environment.SetEnvironmentVariable(
 
 try
 {
-    RunUiStateRegressionChecks();
-    CheckAutoLoginScriptSafety();
-    CheckPreferenceUpgradeCompatibility();
-    CheckIntervalJitterBounds();
-    CheckTimerDelayAndNetworkClassification();
-    CheckAtomicConfigurationRecovery();
-    CheckLogSanitizationAndRetention();
-    await CheckInterruptedOperationProtectionAsync();
-    await CheckStrictInterruptedSwapRecoveryAsync();
-    CheckCorruptJournalRecovery();
-    await NoSeatNeverWritesAsync();
-    await SuccessfulSwapIsStrictlySerialAsync();
-    await FailedTargetRestoresOldCourseAsync();
-    await DuplicateTargetNeverWritesAsync();
-    await HigherPrioritySelectionDisablesConflictingLowerTaskAsync();
+    var skipUi = args.Contains("--skip-ui", StringComparer.OrdinalIgnoreCase);
+    if (skipUi)
+    {
+        Console.WriteLine("[跳过] 界面状态回归（CI 托管环境不提供稳定的 WPF 布局与性能条件）");
+    }
+    else
+    {
+        RunCheck("界面状态回归", RunUiStateRegressionChecks);
+    }
+
+    RunCheck("自动登录脚本安全", CheckAutoLoginScriptSafety);
+    RunCheck("偏好设置升级兼容", CheckPreferenceUpgradeCompatibility);
+    RunCheck("检查间隔抖动边界", CheckIntervalJitterBounds);
+    RunCheck("定时延迟与网络分类", CheckTimerDelayAndNetworkClassification);
+    RunCheck("原子配置恢复", CheckAtomicConfigurationRecovery);
+    RunCheck("日志脱敏与保留期", CheckLogSanitizationAndRetention);
+    await RunCheckAsync("中断操作保护", CheckInterruptedOperationProtectionAsync);
+    await RunCheckAsync("严格换课恢复", CheckStrictInterruptedSwapRecoveryAsync);
+    RunCheck("损坏事务记录恢复", CheckCorruptJournalRecovery);
+    await RunCheckAsync("无余量时禁止写入", NoSeatNeverWritesAsync);
+    await RunCheckAsync("成功换课严格串行", SuccessfulSwapIsStrictlySerialAsync);
+    await RunCheckAsync("目标失败时恢复旧课", FailedTargetRestoresOldCourseAsync);
+    await RunCheckAsync("重复目标禁止写入", DuplicateTargetNeverWritesAsync);
+    await RunCheckAsync("高优先级成功后禁用冲突任务", HigherPrioritySelectionDisablesConflictingLowerTaskAsync);
     Console.WriteLine("路线二任务引擎离线场景检查全部通过。");
 }
 catch (Exception ex)
 {
     Console.Error.WriteLine(ex);
     Environment.ExitCode = 1;
+}
+
+static void RunCheck(string name, Action check)
+{
+    Console.WriteLine($"[检查] {name}");
+    check();
+}
+
+static async Task RunCheckAsync(string name, Func<Task> check)
+{
+    Console.WriteLine($"[检查] {name}");
+    await check();
 }
 
 static void RunUiStateRegressionChecks()

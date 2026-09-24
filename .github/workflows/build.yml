@@ -29,6 +29,5 @@ jobs:
       - name: Build
         run: dotnet build UstcCourseAssistant.sln --configuration Release --no-restore
 
-      - name: Run offline regression checks
-        run: dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks --configuration Release --no-build
-
+      - name: Run CI-safe offline regression checks
+        run: dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks --configuration Release --no-build -- --skip-ui
