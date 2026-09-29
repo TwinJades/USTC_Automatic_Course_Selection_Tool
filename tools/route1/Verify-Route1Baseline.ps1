@@ -21,7 +21,22 @@ foreach ($line in Get-Content -LiteralPath $baselinePath) {
         continue
     }
 
-    $actual = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($parts[1].StartsWith("src/UstcCourseAssistant/", [StringComparison]::OrdinalIgnoreCase)) {
+        # Git checks out these text files with CRLF; the baseline hashes Git's LF form.
+        $bytes = [System.IO.File]::ReadAllBytes($target)
+        $normalized = [System.IO.MemoryStream]::new()
+        for ($index = 0; $index -lt $bytes.Length; $index++) {
+            if ($bytes[$index] -eq 13 -and $index + 1 -lt $bytes.Length -and $bytes[$index + 1] -eq 10) {
+                continue
+            }
+            $normalized.WriteByte($bytes[$index])
+        }
+        $actual = [Convert]::ToHexString([System.Security.Cryptography.SHA256]::HashData($normalized.ToArray())).ToLowerInvariant()
+        $normalized.Dispose()
+    }
+    else {
+        $actual = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
     if ($actual -ne $parts[0]) {
         $failures += "文件已变化：$($parts[1])"
     }
