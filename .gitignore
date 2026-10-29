@@ -23,15 +23,35 @@ packages/
 *.nupkg
 *.snupkg
 
+# Python tool caches
+__pycache__/
+*.py[cod]
+
 # Published binaries belong in GitHub Releases
 release/
 publish/
 
 # Local runtime and smoke-test data
 tests/smoke-data/
+ustc-route2-ui-check-*/
+browser-profile/
+USTC Course Assistant/
+USTC Course Assistant Route2/
+preferences.json
+automation-settings.json
+operation-journal.json
+activity.jsonl
 *.log
 *.tmp
 *.bak
+*.tmp-*
+*.corrupt-*
+
+# Local environment secrets
+.env
+.env.*
+!.env.example
+!.env.template
 
 # Operating-system files
 .DS_Store
