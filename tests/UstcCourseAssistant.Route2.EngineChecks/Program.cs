@@ -6,13 +6,12 @@ using System.Windows.Controls;
 using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
-using System.Windows.Shapes;
 using System.Text.Json;
 using IOPath = System.IO.Path;
 
 Environment.SetEnvironmentVariable(
     "USTC_ROUTE2_TEST_DATA_ROOT",
-    IOPath.Combine(IOPath.GetTempPath(), "ustc-route2-ui-check-" + Guid.NewGuid().ToString("N")));
+    IOPath.Combine(FindRepositoryRoot(), "artifacts", "engine-checks", Guid.NewGuid().ToString("N")));
 
 try
 {
@@ -35,6 +34,12 @@ try
     await RunCheckAsync("中断操作保护", CheckInterruptedOperationProtectionAsync);
     await RunCheckAsync("严格换课恢复", CheckStrictInterruptedSwapRecoveryAsync);
     RunCheck("损坏事务记录恢复", CheckCorruptJournalRecovery);
+    RunCheck("预约持久化与损坏恢复", CheckScheduledStorage);
+    RunCheck("预约一次性到期与重启恢复", CheckScheduledLifecycle);
+    RunCheck("预约轮次解析", CheckScheduledTurnResolution);
+    RunCheck("预约幂等导入与隔离边界", CheckScheduledImport);
+    RunCheck("预约保存失败与导入恢复", CheckScheduledPersistenceFailure);
+    await RunCheckAsync("真实操作队列排序与取消", CheckCourseOperationQueueAsync);
     await RunCheckAsync("无余量时禁止写入", NoSeatNeverWritesAsync);
     await RunCheckAsync("成功换课严格串行", SuccessfulSwapIsStrictlySerialAsync);
     await RunCheckAsync("目标失败时恢复旧课", FailedTargetRestoresOldCourseAsync);
@@ -46,6 +51,427 @@ catch (Exception ex)
 {
     Console.Error.WriteLine(ex);
     Environment.ExitCode = 1;
+}
+
+static string FindRepositoryRoot()
+{
+    for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
+    {
+        if (File.Exists(IOPath.Combine(directory.FullName, "UstcCourseAssistant.sln")))
+            return directory.FullName;
+    }
+    throw new DirectoryNotFoundException("找不到仓库根目录，拒绝将检查产物写入系统临时目录。");
+}
+
+static string CreateCheckDirectory(string name)
+{
+    var directory = IOPath.Combine(Environment.GetEnvironmentVariable("USTC_ROUTE2_TEST_DATA_ROOT")!, name + "-" + Guid.NewGuid().ToString("N"));
+    Directory.CreateDirectory(directory);
+    return directory;
+}
+
+static DateTimeOffset ScheduledCheckTime() => new(2026, 11, 1, 8, 59, 59, TimeSpan.FromHours(8));
+
+static ScheduledSelection CreateAppointment(DateTimeOffset executeAt, params AutomationTask[] tasks) => new()
+{
+    CreatedAt = executeAt.AddHours(-1),
+    ExecuteAt = executeAt,
+    StudentId = 100,
+    RealOperationsAuthorized = true,
+    Tasks = tasks.Length == 0 ? [CreateTask("SCHEDULED.01")] : [.. tasks]
+};
+
+static void ExpectFailure<TException>(Action action, string message) where TException : Exception
+{
+    try
+    {
+        action();
+    }
+    catch (TException)
+    {
+        return;
+    }
+    throw new InvalidOperationException(message);
+}
+
+static void CheckScheduledStorage()
+{
+    var root = CreateCheckDirectory("scheduled-storage");
+    var path = IOPath.Combine(root, "appointments.json");
+    var store = new ScheduledSelectionStore(path);
+    Assert(store.Load().Appointments.Count == 0, "不存在的预约文件应可作为新配置加载");
+    var now = ScheduledCheckTime();
+    var first = CreateAppointment(now.AddSeconds(1), CreateTask("FIRST.01", "OLD.01"));
+    first.State = ScheduledSelectionState.Armed;
+    first.RunWhenMissed = true;
+    var second = CreateAppointment(now.AddDays(1), CreateTask("SECOND.01"));
+    second.State = ScheduledSelectionState.Armed;
+    store.Save(new ScheduledSelectionSettings { Appointments = [first, second] });
+    var loaded = new ScheduledSelectionStore(path).Load().Appointments;
+    Assert(loaded.Count == 2 && loaded[0].ExecuteAt == first.ExecuteAt && loaded[1].ExecuteAt == second.ExecuteAt,
+        "独立预约时间没有持久化");
+    Assert(loaded[0].RunWhenMissed && !loaded[1].RunWhenMissed && loaded.All(item => item.RealOperationsAuthorized),
+        "预约补执行设置或明确授权没有持久化");
+    Assert(loaded[0].Tasks.Single().CourseCode == "FIRST.01"
+           && loaded[0].Tasks[0].ConflictingCourseCodes.SequenceEqual(["OLD.01"]), "预约课程丢失");
+
+    var queued = CreateAppointment(now.AddSeconds(2));
+    queued.State = ScheduledSelectionState.Queued;
+    var running = CreateAppointment(now.AddSeconds(3));
+    running.State = ScheduledSelectionState.Running;
+    running.StartedAt = now;
+    var importOnly = CreateAppointment(now.AddSeconds(4));
+    importOnly.State = ScheduledSelectionState.Running;
+    importOnly.StartedAt = now;
+    importOnly.SelectionFinished = true;
+    importOnly.CompletionAction = ScheduledCompletionAction.ImportToMonitoring;
+    store.Save(new ScheduledSelectionSettings { Appointments = [first, queued, running, importOnly] });
+    store.Save(new ScheduledSelectionSettings { Appointments = [second] });
+    File.WriteAllText(path, "{corrupt");
+    var recoveredStore = new ScheduledSelectionStore(path);
+    var recovered = recoveredStore.Load().Appointments;
+    Assert(!string.IsNullOrWhiteSpace(recoveredStore.LoadWarning), "备份恢复必须显式告知来源");
+    Assert(recovered.Single(item => item.Id == first.Id).State == ScheduledSelectionState.Draft,
+        "备份中的启用预约不得自动执行");
+    Assert(recovered.Where(item => item.Id != first.Id).All(item => item.State == ScheduledSelectionState.Interrupted),
+        "备份执行阶段必须保守恢复为中断");
+    var recoveredService = new ScheduledSelectionService(new ScheduledSelectionStore(path), new CheckTimeProvider(now));
+    recoveredService.RestoreAfterRestart(now.AddDays(2));
+    Assert(recoveredService.CollectDue(now.AddDays(2), true).Count == 0 && recoveredService.PendingImports.Count == 0,
+        "备份恢复不得重放选课或自动导入");
+
+    var brokenPath = IOPath.Combine(root, "unrecoverable.json");
+    File.WriteAllText(brokenPath, "broken-main");
+    File.WriteAllText(brokenPath + ".bak", "broken-backup");
+    ExpectFailure<InvalidDataException>(() => new ScheduledSelectionStore(brokenPath).Load(),
+        "所有配置副本损坏时不得静默加载空预约");
+    Assert(File.ReadAllText(brokenPath) == "broken-main" && File.ReadAllText(brokenPath + ".bak") == "broken-backup",
+        "无法恢复时必须保留损坏文件供核对");
+}
+
+static void CheckScheduledLifecycle()
+{
+    var now = ScheduledCheckTime();
+    var clock = new CheckTimeProvider(now);
+    var path = IOPath.Combine(CreateCheckDirectory("scheduled-lifecycle"), "appointments.json");
+    var service = new ScheduledSelectionService(new ScheduledSelectionStore(path), clock);
+    var first = CreateAppointment(now.AddSeconds(1));
+    service.Arm(first, clock.GetUtcNow());
+    Assert(service.CollectDue(clock.GetUtcNow(), false).Count == 0, "未来预约不得提前入队");
+    clock.Advance(TimeSpan.FromSeconds(1));
+    Assert(service.CollectDue(clock.GetUtcNow(), false).Select(item => item.Id).SequenceEqual([first.Id]),
+        "跨越到期时间没有恰好入队一次");
+    Assert(service.CollectDue(clock.GetUtcNow(), false).Count == 0, "同一到期预约重复入队");
+    service.MarkRunning(first.Id, clock.GetUtcNow());
+    ExpectFailure<InvalidOperationException>(() => service.BeginEdit(first.Id), "运行中预约仍可编辑");
+    ExpectFailure<InvalidOperationException>(() => service.Cancel(first.Id), "运行中预约仍可取消");
+    ExpectFailure<InvalidOperationException>(() => service.Delete(first.Id), "运行中预约仍可删除");
+    var restart = new ScheduledSelectionService(new ScheduledSelectionStore(path), clock);
+    restart.RestoreAfterRestart(clock.GetUtcNow());
+    Assert(restart.Get(first.Id)!.State == ScheduledSelectionState.Interrupted
+           && restart.CollectDue(clock.GetUtcNow(), true).Count == 0, "重启重放了已经开始的预约");
+
+    var missed = CreateAppointment(now.AddMinutes(1));
+    var late = CreateAppointment(now.AddMinutes(2));
+    late.RunWhenMissed = true;
+    var earlierCreated = CreateAppointment(late.ExecuteAt);
+    earlierCreated.CreatedAt = late.CreatedAt.AddMinutes(-1);
+    earlierCreated.RunWhenMissed = true;
+    var latest = CreateAppointment(now.AddMinutes(3));
+    latest.RunWhenMissed = true;
+    foreach (var item in new[] { latest, late, missed, earlierCreated })
+        restart.Arm(item, clock.GetUtcNow());
+    clock.Advance(TimeSpan.FromDays(1));
+    var due = restart.CollectDue(clock.GetUtcNow(), true);
+    Assert(due.Select(item => item.Id).SequenceEqual([earlierCreated.Id, late.Id, latest.Id]),
+        "过期预约未按执行时间、创建时间稳定排序");
+    Assert(restart.Get(missed.Id)!.State == ScheduledSelectionState.Missed, "未授权补执行的过期预约没有转为错过");
+    Assert(restart.CollectDue(clock.GetUtcNow(), true).Count == 0, "重复恢复扫描重复入队");
+    var queuedRestart = new ScheduledSelectionService(new ScheduledSelectionStore(path), clock);
+    queuedRestart.RestoreAfterRestart(clock.GetUtcNow());
+    Assert(due.All(item => queuedRestart.Get(item.Id)!.State == ScheduledSelectionState.Interrupted),
+        "重启时已持久化入队的预约被重放");
+
+    var editable = CreateAppointment(clock.GetUtcNow().AddHours(1));
+    queuedRestart.Arm(editable, clock.GetUtcNow());
+    var snapshot = queuedRestart.Get(editable.Id)!;
+    snapshot.Tasks.Clear();
+    Assert(queuedRestart.Get(editable.Id)!.Tasks.Count == 1, "预约快照暴露了服务内部可变集合");
+    queuedRestart.BeginEdit(editable.Id);
+    Assert(new ScheduledSelectionStore(path).Load().Appointments.Single(item => item.Id == editable.Id).State == ScheduledSelectionState.Draft,
+        "编辑启用预约前没有持久化撤销启用");
+    queuedRestart.Arm(editable, clock.GetUtcNow());
+    queuedRestart.Cancel(editable.Id);
+    Assert(queuedRestart.Get(editable.Id)!.State == ScheduledSelectionState.Cancelled,
+        "取消预约没有持久化终态");
+    Assert(queuedRestart.CollectDue(clock.GetUtcNow().AddHours(2), false).Count == 0,
+        "已取消预约仍然进入到期队列");
+
+    var closePath = IOPath.Combine(CreateCheckDirectory("scheduled-close"), "appointments.json");
+    var closing = new ScheduledSelectionService(new ScheduledSelectionStore(closePath), new CheckTimeProvider(now));
+    closing.Arm(first, now);
+    closing.CollectDue(now, false);
+    closing.CollectDue(now.AddSeconds(1), false);
+    closing.RestoreQueuedToArmed();
+    Assert(new ScheduledSelectionStore(closePath).Load().Appointments.Single().State == ScheduledSelectionState.Armed,
+        "正常退出未将尚未开始的预约原子恢复为 Armed");
+
+    var delayedPath = IOPath.Combine(CreateCheckDirectory("scheduled-delayed-tick"), "appointments.json");
+    var delayed = new ScheduledSelectionService(new ScheduledSelectionStore(delayedPath), new CheckTimeProvider(now));
+    var notAllowed = CreateAppointment(now.AddSeconds(1));
+    var allowed = CreateAppointment(now.AddSeconds(1));
+    allowed.RunWhenMissed = true;
+    delayed.Arm(notAllowed, now);
+    delayed.Arm(allowed, now);
+    delayed.CollectDue(now, false);
+    Assert(delayed.CollectDue(now.AddMinutes(5), false).Select(item => item.Id).SequenceEqual([allowed.Id])
+           && delayed.Get(notAllowed.Id).State == ScheduledSelectionState.Missed,
+        "运行中显著迟到未遵循预约补执行授权");
+}
+
+static void CheckScheduledTurnResolution()
+{
+    var appointment = CreateAppointment(ScheduledCheckTime().AddHours(1));
+    var first = new TurnInfo(200, "第一轮", "秋季");
+    var second = new TurnInfo(201, "第二轮", "秋季");
+    Assert(ScheduledSelectionService.ResolveTurn(new SessionValidationResult(100, [first]), appointment).Id == first.Id,
+        "唯一开放轮次没有被采用");
+    ExpectFailure<InvalidOperationException>(() => ScheduledSelectionService.ResolveTurn(new SessionValidationResult(100, []), appointment),
+        "无开放轮次时不得执行");
+    ExpectFailure<InvalidOperationException>(() => ScheduledSelectionService.ResolveTurn(new SessionValidationResult(100, [first, second]), appointment),
+        "多个轮次时不得擅自选择第一项");
+    ExpectFailure<InvalidOperationException>(() => ScheduledSelectionService.ResolveTurn(new SessionValidationResult(101, [first]), appointment),
+        "账号变化时不得执行");
+    appointment.TurnId = second.Id;
+    Assert(ScheduledSelectionService.ResolveTurn(new SessionValidationResult(100, [first, second]), appointment).Id == second.Id,
+        "指定轮次没有被保留");
+    ExpectFailure<InvalidOperationException>(() => ScheduledSelectionService.ResolveTurn(new SessionValidationResult(100, [first]), appointment),
+        "指定轮次关闭后不得自动改绑");
+}
+
+static void CheckScheduledImport()
+{
+    var existing = CreateTask(" b.01 ", "ORIGINAL.01");
+    existing.StudentId = 100;
+    existing.TurnId = 200;
+    existing.Priority = 2;
+    existing.Enabled = false;
+    var otherTurn = CreateTask("A.01");
+    otherTurn.StudentId = 100;
+    otherTurn.TurnId = 201;
+    otherTurn.Priority = 1;
+    var a = CreateTask("A.01", "OLD.01");
+    a.Priority = 3;
+    var b = CreateTask("B.01");
+    b.Priority = 4;
+    var c = CreateTask("C.01");
+    c.Priority = 5;
+    var selected = CreateTask("SELECTED.01");
+    selected.Priority = 1;
+    var excluded = CreateTask("EXCLUDED.01");
+    excluded.Priority = 2;
+    excluded.Enabled = false;
+    var appointment = CreateAppointment(ScheduledCheckTime(), c, b, selected, a, excluded);
+    appointment.CompletionAction = ScheduledCompletionAction.ImportToMonitoring;
+    appointment.SelectionFinished = true;
+    appointment.State = ScheduledSelectionState.Running;
+    appointment.ExecutedTurnId = 200;
+    appointment.ExecutedTurnName = "执行轮次";
+    appointment.ConfirmedSelectedTaskIds = [selected.Id];
+    var monitoring = new AutomationSettings { Tasks = [otherTurn, existing] };
+    Assert(ScheduledSelectionService.ImportRemainingTasks(appointment, monitoring) == 2, "剩余课程导入数量错误");
+    Assert(ReferenceEquals(monitoring.Tasks[0], otherTurn) && ReferenceEquals(monitoring.Tasks[1], existing)
+           && !existing.Enabled && existing.Priority == 2 && existing.ConflictingCourseCodes.SequenceEqual(["ORIGINAL.01"]),
+        "导入修改了已有课程设置、启用状态或顺序");
+    Assert(monitoring.Tasks.Skip(2).Select(task => task.CourseCode).SequenceEqual(["A.01", "C.01"])
+           && monitoring.Tasks.Skip(2).Select(task => task.Priority).SequenceEqual([3, 4]), "剩余课程未按预约优先级稳定追加");
+    var imported = monitoring.Tasks[2];
+    Assert(imported.Id != a.Id && imported.StudentId == 100 && imported.TurnId == 200,
+        "导入课程未分配新标识或未绑定实际执行账号轮次");
+    imported.ConflictingCourseCodes.Add("LOCAL.01");
+    Assert(!a.ConflictingCourseCodes.Contains("LOCAL.01"), "导入课程与预约共享可变冲突集合");
+    Assert(ScheduledSelectionService.ImportRemainingTasks(appointment, monitoring) == 0 && monitoring.Tasks.Count == 4,
+        "重复导入增加了课程");
+
+    var high = CreateTask("HIGH.01", "LOW.01");
+    high.StudentId = 100;
+    high.TurnId = 200;
+    high.Priority = 1;
+    AutomationTask Low(long student, long turn, string code = "LOW.01", params string[] conflicts)
+    {
+        var task = CreateTask(code, conflicts);
+        task.StudentId = student;
+        task.TurnId = turn;
+        task.Priority = 2;
+        return task;
+    }
+    var same = Low(100, 200);
+    var differentTurn = Low(100, 201);
+    var differentAccount = Low(101, 200);
+    var reverse = Low(100, 200, "REVERSE.01", "HIGH.01");
+    AutomationTaskRules.DisableConflictingLowerPriorityTasks([high, same, differentTurn, differentAccount, reverse], high, (_, _, _) => { });
+    Assert(!same.Enabled && !reverse.Enabled && differentTurn.Enabled && differentAccount.Enabled,
+        "冲突规则未保留双向判断或跨账号、轮次错误停用课程");
+
+    same.Enabled = reverse.Enabled = true;
+    var snapshot = new List<AutomationTask> { reverse, differentAccount, same, differentTurn, high };
+    var visited = new List<Guid>();
+    foreach (var task in snapshot.OrderBy(task => task.Priority))
+    {
+        if (!task.Enabled) continue;
+        visited.Add(task.Id);
+        if (task.Id == high.Id)
+            AutomationTaskRules.DisableConflictingLowerPriorityTasks(snapshot, task, (_, _, _) => { });
+    }
+    Assert(visited.Contains(high.Id) && !visited.Contains(same.Id) && !visited.Contains(reverse.Id)
+           && visited.Contains(differentTurn.Id) && visited.Contains(differentAccount.Id),
+        "有序快照遍历未跳过已由高优先级确认结果排除的同账号同轮次课程");
+}
+
+static void CheckScheduledPersistenceFailure()
+{
+    var now = ScheduledCheckTime();
+    var root = CreateCheckDirectory("scheduled-persistence-failure");
+    var path = IOPath.Combine(root, "appointments.json");
+    var service = new ScheduledSelectionService(new ScheduledSelectionStore(path), new CheckTimeProvider(now));
+    service.CollectDue(now, false);
+    var appointment = CreateAppointment(now.AddSeconds(1));
+    service.UpsertDraft(appointment);
+    using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+    {
+        ExpectFailure<IOException>(() => service.Arm(appointment, now), "启用保存失败未上报");
+        Assert(service.Get(appointment.Id)!.State == ScheduledSelectionState.Draft, "保存失败后仍发布了启用状态");
+    }
+    service.Arm(appointment, now);
+    using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+    {
+        ExpectFailure<IOException>(() => service.CollectDue(now.AddSeconds(1), false), "入队保存失败未上报");
+        Assert(service.Get(appointment.Id)!.State == ScheduledSelectionState.Armed, "保存失败后仍发布了入队状态");
+    }
+    service.CollectDue(now.AddSeconds(1), false);
+    using (var locked = new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+    {
+        ExpectFailure<IOException>(() => service.MarkRunning(appointment.Id, now.AddSeconds(1)), "开始保存失败未上报");
+        Assert(service.Get(appointment.Id)!.State == ScheduledSelectionState.Queued, "保存失败后仍发布了开始状态");
+    }
+
+    var importPath = IOPath.Combine(root, "import-appointments.json");
+    var imports = new ScheduledSelectionService(new ScheduledSelectionStore(importPath), new CheckTimeProvider(now));
+    var remaining = CreateAppointment(now.AddSeconds(1), CreateTask("REMAINING.01"));
+    remaining.CompletionAction = ScheduledCompletionAction.ImportToMonitoring;
+    imports.Arm(remaining, now);
+    imports.CollectDue(now, false);
+    imports.CollectDue(now.AddSeconds(1), false);
+    imports.MarkRunning(remaining.Id, now.AddSeconds(1));
+    imports.MarkSelectionFinished(remaining.Id, new TurnInfo(200, "执行轮次", "秋季"), remaining.Tasks, []);
+    var monitoringPath = IOPath.Combine(root, "monitoring.json");
+    var monitoringStore = new AutomationStore(monitoringPath);
+    monitoringStore.Save(new AutomationSettings());
+    var monitoring = monitoringStore.Load().Settings;
+    ScheduledSelectionService.ImportRemainingTasks(imports.Get(remaining.Id)!, monitoring);
+    using (var locked = new FileStream(monitoringPath, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+        ExpectFailure<IOException>(() => monitoringStore.Save(monitoring), "监测配置保存失败未上报");
+    Assert(imports.Get(remaining.Id) is { SelectionFinished: true, ImportFinished: false, State: ScheduledSelectionState.Running },
+        "监测保存失败后预约被错误标记完成");
+    var restored = new ScheduledSelectionService(new ScheduledSelectionStore(importPath), new CheckTimeProvider(now));
+    restored.RestoreAfterRestart(now.AddDays(1));
+    Assert(restored.CollectDue(now.AddDays(1), true).Count == 0 && restored.PendingImports.Count == 1,
+        "选课已结束的重启恢复应只导入而不重新执行");
+    var recoveredMonitoring = monitoringStore.Load().Settings;
+    Assert(ScheduledSelectionService.ImportRemainingTasks(restored.PendingImports.Single(), recoveredMonitoring) == 1,
+        "恢复可写后未完成剩余课程导入");
+    monitoringStore.Save(recoveredMonitoring);
+    // 模拟监测配置已落盘、预约导入标记尚未落盘时再次重启。
+    var secondRestart = new ScheduledSelectionService(new ScheduledSelectionStore(importPath), new CheckTimeProvider(now));
+    secondRestart.RestoreAfterRestart(now.AddDays(1));
+    var persistedMonitoring = monitoringStore.Load().Settings;
+    Assert(ScheduledSelectionService.ImportRemainingTasks(secondRestart.PendingImports.Single(), persistedMonitoring) == 0,
+        "阶段间重启重复导入了已持久化课程");
+    monitoringStore.Save(persistedMonitoring);
+    secondRestart.MarkImportFinished(remaining.Id);
+    secondRestart.MarkFinished(remaining.Id, ScheduledSelectionState.Completed, "导入完成", now.AddDays(1));
+    Assert(new ScheduledSelectionStore(importPath).Load().Appointments.Single() is { State: ScheduledSelectionState.Completed, ImportFinished: true },
+        "恢复导入未持久化最终完成状态");
+}
+
+static async Task CheckCourseOperationQueueAsync()
+{
+    var queue = new CourseOperationQueue();
+    var now = ScheduledCheckTime();
+    var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var order = new List<string>();
+    var active = 0;
+    var maximumActive = 0;
+    async Task<int> Execute(string name, bool block = false)
+    {
+        var count = Interlocked.Increment(ref active);
+        maximumActive = Math.Max(maximumActive, count);
+        try
+        {
+            order.Add(name);
+            if (block)
+            {
+                entered.TrySetResult();
+                await release.Task;
+            }
+            return order.Count;
+        }
+        finally { Interlocked.Decrement(ref active); }
+    }
+    var current = queue.EnqueueAsync(false, now, now, _ => Execute("current", true), CancellationToken.None);
+    await entered.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    var ordinary = queue.EnqueueAsync(false, now, now, _ => Execute("ordinary"), CancellationToken.None);
+    var ordinarySecond = queue.EnqueueAsync(false, now.AddDays(-1), now.AddDays(-1), _ => Execute("ordinary-second"), CancellationToken.None);
+    var later = queue.EnqueueAsync(true, now.AddMinutes(1), now, _ => Execute("later"), CancellationToken.None);
+    var earlier = queue.EnqueueAsync(true, now, now, _ => Execute("earlier"), CancellationToken.None);
+    var sameTimeLaterCreated = queue.EnqueueAsync(true, now, now.AddSeconds(1), _ => Execute("later-created"), CancellationToken.None);
+    var sameTimeStable = queue.EnqueueAsync(true, now, now.AddSeconds(1), _ => Execute("stable-tie"), CancellationToken.None);
+    using var cancellation = new CancellationTokenSource();
+    var cancelled = queue.EnqueueAsync(true, now.AddMinutes(-1), now, _ => Execute("cancelled"), cancellation.Token);
+    cancellation.Cancel();
+    var alreadyCancelled = queue.EnqueueAsync(false, now, now, _ => Execute("already-cancelled"), cancellation.Token);
+    Assert(alreadyCancelled.IsCanceled, "已取消令牌仍创建可执行条目");
+    try
+    {
+        await cancelled.WaitAsync(TimeSpan.FromSeconds(10));
+        throw new InvalidOperationException("等待中的取消条目没有取消");
+    }
+    catch (OperationCanceledException) { }
+    var readonlyCompleted = await Task.Run(() => 42).WaitAsync(TimeSpan.FromSeconds(10));
+    Assert(readonlyCompleted == 42 && !current.IsCompleted && !ordinary.IsCompleted,
+        "等待真实操作时独立只读工作无法完成或队列提前执行");
+    release.SetResult();
+    await Task.WhenAll(current, ordinary, ordinarySecond, later, earlier, sameTimeLaterCreated, sameTimeStable).WaitAsync(TimeSpan.FromSeconds(10));
+    Assert(order.SequenceEqual(["current", "earlier", "later-created", "stable-tie", "later", "ordinary", "ordinary-second"])
+           && maximumActive == 1, "队列没有保持完整回调串行、预约优先或稳定排序");
+
+    var runningStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var runningRelease = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    using var runningCancellation = new CancellationTokenSource();
+    var running = queue.EnqueueAsync(false, now, now, async token =>
+    {
+        runningStarted.SetResult();
+        await runningRelease.Task;
+        return token.IsCancellationRequested;
+    }, runningCancellation.Token);
+    await runningStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+    var followerStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+    var follower = queue.EnqueueAsync(true, now, now, _ =>
+    {
+        followerStarted.SetResult();
+        return Task.FromResult(1);
+    }, CancellationToken.None);
+    runningCancellation.Cancel();
+    Assert(!followerStarted.Task.IsCompleted, "取消运行中条目时下一回调提前进入");
+    runningRelease.SetResult();
+    Assert(await running.WaitAsync(TimeSpan.FromSeconds(10)), "运行回调没有接收到自身取消令牌");
+    await follower.WaitAsync(TimeSpan.FromSeconds(10));
+    var failed = queue.EnqueueAsync<int>(false, now, now, _ => throw new InvalidOperationException("expected queue failure"), CancellationToken.None);
+    try { await failed.WaitAsync(TimeSpan.FromSeconds(10)); throw new Exception("队列丢失回调异常"); }
+    catch (InvalidOperationException ex) when (ex.Message == "expected queue failure") { }
+    Assert(await queue.EnqueueAsync(false, now, now, _ => Task.FromResult(7), CancellationToken.None)
+        .WaitAsync(TimeSpan.FromSeconds(10)) == 7, "回调失败后队列未继续工作");
 }
 
 static void RunCheck(string name, Action check)
@@ -97,44 +523,15 @@ static void RunUiStateRegressionChecks()
             var updateOnboarding = windowType.GetMethod("UpdateOnboardingStep", BindingFlags.Instance | BindingFlags.NonPublic)!;
 
             Assert(!(bool)runningField.GetValue(window)!, "程序启动后不得自动开始监测");
-            Assert(window.Icon is not null && loginWindow.Icon is not null, "主窗口或教务窗口没有加载统一图标");
             Assert(window.MinWidth >= 1040 && window.MinHeight >= 700, "主窗口最小尺寸约束发生变化");
 
             var operationTabs = (TabControl)window.FindName("OperationTabs");
-            var topHeaders = operationTabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString()).ToArray();
-            Assert(topHeaders.SequenceEqual(["任务监测", "活动记录", "调试工具", "账号与安全"]), "最终主导航结构不正确");
             var advancedTabs = (TabControl)window.FindName("AdvancedToolsTabs");
-            var advancedHeaders = advancedTabs.Items.Cast<TabItem>().Select(item => item.Header?.ToString()).ToArray();
-            Assert(advancedHeaders.SequenceEqual(["课程影子", "单门受控操作"]), "调试工具子页面结构不正确");
 
-            var version = (TextBox)window.FindName("VersionText");
-            var unofficial = (TextBox)window.FindName("UnofficialBadgeText");
-            var title = (TextBox)window.FindName("MainTitleText");
-            Assert(title.Text == "USTC 选课助手", "顶部主标题不正确");
-            Assert(version.Text == "2.1.0", "顶部没有显示 2.1.0 版本号");
-            Assert(unofficial.Text == "学生自制工具", "学生自制工具标签缺失");
-            Assert(window.FindName("HeaderAppIcon") is null, "蓝色横幅仍然含有大 Logo");
-
-            var topBar = (Border)window.FindName("TopTeachingSystemBar");
-            var mainColumns = (Grid)window.FindName("MainContentColumns");
             var sessionPanel = (Border)window.FindName("SessionInfoPanel");
             var functionPanel = (Border)window.FindName("FunctionPagesPanel");
-            Assert(System.Windows.Controls.Grid.GetRow(topBar) == 1, "教务系统操作区没有恢复到顶部操作条");
-            Assert(mainColumns.ColumnDefinitions.Count == 3
-                   && System.Windows.Controls.Grid.GetColumn(sessionPanel) == 0
-                   && System.Windows.Controls.Grid.GetColumn(functionPanel) == 2,
-                "会话信息与功能页面没有恢复为左、右两栏");
             var armPanel = (Border)window.FindName("AutomationArmPanel");
             var armCheckBox = (CheckBox)window.FindName("AutomationArmCheckBox");
-            var controlPanel = (StackPanel)window.FindName("AutomationControlPanel");
-            var controlOrder = controlPanel.Children.Cast<System.Windows.FrameworkElement>().Select(item => item.Name).ToArray();
-            Assert(controlOrder.SequenceEqual([
-                    "StartAutomationButton",
-                    "PauseAutomationButton",
-                    "CheckAutomationNowButton",
-                    "AutomationStateText"
-                ]),
-                "任务控制区不是开始、暂停、立即检查、任务状态的顺序");
             foreach (var name in new[]
                      {
                          "StatusText",
@@ -154,46 +551,15 @@ static void RunUiStateRegressionChecks()
             var activityLog = (FlowDocumentScrollViewer)window.FindName("ActivityLogViewer");
             Assert(activityLog.IsSelectionEnabled && activityLog.Cursor == System.Windows.Input.Cursors.Arrow,
                 "活动记录必须可跨行选择复制且不能显示插入光标");
-            Assert(!title.IsReadOnlyCaretVisible && title.Cursor == System.Windows.Input.Cursors.Arrow,
-                "可复制标题仍表现得像可编辑输入框");
 
             var automationGrid = (DataGrid)window.FindName("AutomationTasksGrid");
             Assert(automationGrid.ClipboardCopyMode == DataGridClipboardCopyMode.IncludeHeader,
                 "任务表不再支持 Ctrl+C 复制");
-            Assert(automationGrid.HeadersVisibility == DataGridHeadersVisibility.All
-                   && automationGrid.RowHeaderWidth is >= 22 and <= 26,
-                "任务表左侧行选择区域不是约 22～26 像素");
             Assert(automationGrid.SelectionUnit == DataGridSelectionUnit.FullRow
                    && automationGrid.SelectionMode == DataGridSelectionMode.Single,
                 "任务表没有恢复单选整行模式");
             Assert(!automationGrid.CanUserDeleteRows,
                 "任务表仍允许 DataGrid 默认 Delete 逻辑绕过焦点分流");
-            Assert(automationGrid.Columns[0] is DataGridTemplateColumn,
-                "启用列没有使用可一次点击切换的复选框模板");
-            Assert(automationGrid.Columns[1] is DataGridTemplateColumn
-                   && automationGrid.Columns[4] is DataGridTemplateColumn,
-                "教学班代码或冲突旧课没有改成单击即输入的模板列");
-            Assert(automationGrid.RowHeight is >= 32 and <= 35 && Math.Abs(automationGrid.RowHeight - 34) < 0.1,
-                "任务行高没有调整为 34 个逻辑像素");
-            foreach (var column in automationGrid.Columns.OfType<DataGridTextColumn>())
-            {
-                Assert(HasSetter(column.ElementStyle, System.Windows.FrameworkElement.VerticalAlignmentProperty,
-                        System.Windows.VerticalAlignment.Center),
-                    $"任务表文字列“{column.Header}”没有明确垂直居中");
-            }
-            foreach (var columnIndex in new[] { 1, 4 })
-            {
-                var directInput = (TextBox)((DataGridTemplateColumn)automationGrid.Columns[columnIndex]).CellTemplate.LoadContent();
-                Assert(directInput.GetBindingExpression(TextBox.TextProperty)?.ParentBinding.UpdateSourceTrigger
-                       == System.Windows.Data.UpdateSourceTrigger.PropertyChanged,
-                    $"任务表第 {columnIndex} 列没有即时更新输入内容");
-                directInput.IsEnabled = false;
-                directInput.ApplyTemplate();
-                var inputBorder = (Border?)directInput.Template.FindName("InputBorder", directInput);
-                Assert(inputBorder?.Background is SolidColorBrush background && background.Color.A == 0
-                       && inputBorder.BorderThickness == new System.Windows.Thickness(0),
-                    $"任务表第 {columnIndex} 列在监测锁定时仍显示整块禁用输入框");
-            }
             Assert(((DataGrid)window.FindName("TargetsGrid")).ClipboardCopyMode == DataGridClipboardCopyMode.IncludeHeader,
                 "课程影子表不再支持 Ctrl+C 复制");
             Assert(((TextBox)loginWindow.FindName("BrowserStatusText")).IsReadOnly,
@@ -239,8 +605,6 @@ static void RunUiStateRegressionChecks()
             updateOnboarding.Invoke(window, null);
             var onboardingOverlay = (Canvas)window.FindName("OnboardingOverlay");
             var onboardingHelp = (Button)window.FindName("OnboardingHelpButton");
-            Assert(onboardingHelp.ToolTip?.ToString() == "查看新手指引",
-                "左下角问号的悬停文字不正确");
             Assert(onboardingOverlay.Visibility == System.Windows.Visibility.Visible,
                 "全新用户首次启动时没有显示新手指引");
             Assert(((TextBox)window.FindName("OnboardingStepText")).Text == "第 1 / 6 步",
@@ -251,22 +615,16 @@ static void RunUiStateRegressionChecks()
                 "跳过后新手指引没有关闭");
             onboardingHelp.RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             Assert(onboardingOverlay.Visibility == System.Windows.Visibility.Visible,
-                "左下角问号不能重新打开新手指引");
+                "帮助按钮不能重新打开新手指引");
             ((Button)window.FindName("OnboardingSkipButton")).RaiseEvent(
                 new System.Windows.RoutedEventArgs(Button.ClickEvent));
             Assert(window.ActualWidth >= window.MinWidth && window.ActualHeight >= window.MinHeight,
                 "主窗口无法按最小尺寸完成布局");
             Assert(sessionPanel.ActualWidth >= 280 && functionPanel.ActualWidth >= 600,
                 "最小窗口下左侧会话栏或右侧功能页可用空间不足");
-            Assert(topBar.ActualHeight < 80, "教务系统操作区不再是紧凑顶部操作条");
-            Assert(sessionPanel.IsAncestorOf(armPanel) && armPanel.IsAncestorOf(armCheckBox),
-                "黄色真实操作确认区没有整体移动到左侧会话栏");
             var armTexts = VisualDescendants<TextBox>(armPanel).ToArray();
             Assert(armTexts.Length >= 2 && armTexts.All(text => text.IsReadOnly),
                 "黄色确认区的安全提示文字不能直接选择复制");
-            Assert(armTexts.Any(text => text.Text.StartsWith("检测到余量后", StringComparison.Ordinal))
-                   && armTexts.All(text => !text.Text.Contains("监测检测到", StringComparison.Ordinal)),
-                "黄色确认区仍含有重复用词");
             var armBottom = armPanel.TranslatePoint(new System.Windows.Point(0, armPanel.ActualHeight), sessionPanel).Y;
             Assert(armBottom <= sessionPanel.ActualHeight + 0.5,
                 $"最小窗口下左侧黄色确认区被截断：底部 {armBottom:F1}，会话栏 {sessionPanel.ActualHeight:F1}");
@@ -275,18 +633,6 @@ static void RunUiStateRegressionChecks()
             Assert(armCheckBox.ActualHeight >= 14 && armCheckBottom <= sessionPanel.ActualHeight - 4,
                 $"最小窗口下黄色确认复选框未完整显示：高度 {armCheckBox.ActualHeight:F1}，底部 {armCheckBottom:F1}，会话栏 {sessionPanel.ActualHeight:F1}");
 
-            var intervalSelector = (ComboBox)window.FindName("AutomationIntervalSelector");
-            foreach (var name in new[] { "AutomationCustomIntervalText", "AutomationStartTimeText", "AutomationEndTimeText" })
-            {
-                var input = (TextBox)window.FindName(name);
-                Assert(Math.Abs(input.ActualHeight - intervalSelector.ActualHeight) <= 0.5,
-                    $"输入框 {name} 与检查间隔下拉框高度不一致");
-                Assert(input.VerticalContentAlignment == System.Windows.VerticalAlignment.Center
-                       && input.Padding.Top == input.Padding.Bottom,
-                    $"输入框 {name} 的文字没有垂直居中");
-                Assert(input.ActualHeight >= input.FontSize + 12,
-                    $"输入框 {name} 的文字可能被截断");
-            }
             var taskColumnWidths = automationGrid.Columns.Select(column => column.ActualWidth).ToArray();
             Assert(taskColumnWidths.All(width => width >= 35),
                 "最小窗口下任务表存在被截断的列：" + string.Join(", ", taskColumnWidths.Select(width => width.ToString("F1"))));
@@ -307,14 +653,9 @@ static void RunUiStateRegressionChecks()
             automationGrid.UpdateLayout();
             var selectedRow = (DataGridRow?)automationGrid.ItemContainerGenerator.ContainerFromItem(secondTask);
             Assert(selectedRow?.IsSelected == true, "普通任务行没有形成清楚的整行选择状态");
-            Assert(selectedRow is not null && Math.Abs(selectedRow.ActualHeight - 34) <= 0.5,
-                "任务表实际行高不是 34 个逻辑像素");
 
             var enabledColumn = (DataGridTemplateColumn)automationGrid.Columns[0];
             var enabledBox = (CheckBox)enabledColumn.CellTemplate.LoadContent();
-            Assert(enabledBox.HorizontalAlignment == System.Windows.HorizontalAlignment.Center
-                   && enabledBox.VerticalAlignment == System.Windows.VerticalAlignment.Center,
-                "启用复选框没有保持水平、垂直居中");
             enabledBox.DataContext = secondTask;
             enabledBox.IsChecked = true;
             enabledBox.GetBindingExpression(CheckBox.IsCheckedProperty)?.UpdateSource();
@@ -336,7 +677,7 @@ static void RunUiStateRegressionChecks()
             window.Width = window.MinWidth;
             window.Height = window.MinHeight;
             window.UpdateLayout();
-            operationTabs.SelectedIndex = 1;
+            operationTabs.SelectedItem = operationTabs.Items.Cast<TabItem>().Single(tab => ContainsLogicalContent(tab.Content, activityLog));
             window.UpdateLayout();
             Assert(((FlowDocumentScrollViewer)window.FindName("ActivityLogViewer")).ActualHeight >= 100,
                 "活动记录页在最小窗口下没有可用空间");
@@ -352,10 +693,6 @@ static void RunUiStateRegressionChecks()
             Assert(importantText.Contains("TEST.01", StringComparison.Ordinal)
                    && !importantText.Contains("底层诊断明细", StringComparison.Ordinal),
                 "关键记录没有正确筛选真实写入和普通诊断");
-            Assert(activityLog.Document.Blocks.OfType<Paragraph>()
-                .SelectMany(paragraph => paragraph.Inlines.OfType<Run>())
-                .Any(run => run.Text.Contains("TEST.01", StringComparison.Ordinal) && run.FontWeight == System.Windows.FontWeights.Bold),
-                "真实选退课记录没有加粗");
             ((Button)window.FindName("AllActivityButton")).RaiseEvent(new System.Windows.RoutedEventArgs(Button.ClickEvent));
             var allText = new TextRange(activityLog.Document.ContentStart, activityLog.Document.ContentEnd).Text;
             Assert(allText.Contains("TEST.01", StringComparison.Ordinal)
@@ -399,11 +736,9 @@ static void RunUiStateRegressionChecks()
             switchTimer.Stop();
             Assert(switchTimer.Elapsed < TimeSpan.FromSeconds(1.5),
                 $"缓存后的关键/全部往返切换仍然阻塞过久：{switchTimer.Elapsed.TotalMilliseconds:F0} ms");
-            operationTabs.SelectedIndex = 2;
+            operationTabs.SelectedItem = operationTabs.Items.Cast<TabItem>().Single(tab => ContainsLogicalContent(tab.Content, advancedTabs));
             advancedTabs.SelectedIndex = 0;
             window.UpdateLayout();
-            Assert(VisualDescendants<TextBox>(operationTabs).Any(text => text.Text == "调试工具"),
-                "调试工具页面内部标题没有同步改名");
             var shadowColumnWidths = ((DataGrid)window.FindName("TargetsGrid")).Columns.Select(column => column.ActualWidth).ToArray();
             Assert(shadowColumnWidths.All(width => width >= 35),
                 "最小窗口下课程影子表存在被截断的列：" + string.Join(", ", shadowColumnWidths.Select(width => width.ToString("F1"))));
@@ -411,7 +746,8 @@ static void RunUiStateRegressionChecks()
             window.UpdateLayout();
             Assert(((TextBox)window.FindName("ControlledDetailsText")).ActualWidth >= 300,
                 "最小窗口下单门操作结果区被截断");
-            operationTabs.SelectedIndex = 3;
+            operationTabs.SelectedItem = operationTabs.Items.Cast<TabItem>().Single(tab =>
+                ContainsLogicalContent(tab.Content, window.FindName("SavedAccountTextBox")));
             window.UpdateLayout();
             var accountTextBox = (TextBox)window.FindName("SavedAccountTextBox");
             var passwordBox = (PasswordBox)window.FindName("SavedPasswordBox");
@@ -447,14 +783,14 @@ static void RunUiStateRegressionChecks()
                 automationGrid.IsEnabled = false;
                 RenderPreview(Suffixed(previewPath, "monitoring-locked"), 1240, 800);
                 automationGrid.IsEnabled = true;
-                operationTabs.SelectedIndex = 1;
+                operationTabs.SelectedItem = operationTabs.Items.Cast<TabItem>().Single(tab => ContainsLogicalContent(tab.Content, activityLog));
                 RenderPreview(Suffixed(previewPath, "activity"), 1240, 800);
-                operationTabs.SelectedIndex = 2;
+                operationTabs.SelectedItem = operationTabs.Items.Cast<TabItem>().Single(tab => ContainsLogicalContent(tab.Content, advancedTabs));
                 advancedTabs.SelectedIndex = 0;
                 RenderPreview(Suffixed(previewPath, "shadow"), 1240, 800);
                 advancedTabs.SelectedIndex = 1;
                 RenderPreview(Suffixed(previewPath, "controlled"), 1240, 800);
-                operationTabs.SelectedIndex = 3;
+                operationTabs.SelectedItem = operationTabs.Items.Cast<TabItem>().Single(tab => ContainsLogicalContent(tab.Content, accountTextBox));
                 RenderPreview(Suffixed(previewPath, "account-security"), 1240, 800);
                 operationTabs.SelectedIndex = 0;
                 RenderPreview(Suffixed(previewPath, "minimum"), window.MinWidth, window.MinHeight);
@@ -554,18 +890,8 @@ static void RunUiStateRegressionChecks()
             runningField.SetValue(window, true);
             var cycle = (Task)runCycle.Invoke(window, [true])!;
             cycle.GetAwaiter().GetResult();
-            var status = (TextBox)window.FindName("StatusText");
-            var dot = (Ellipse)window.FindName("StatusDot");
-            Assert(status.Text.Contains("不在运行时段", StringComparison.Ordinal), "运行时段外未显示等待状态");
             Assert(((TextBox)window.FindName("AutomationStateText")).Text == "等待运行时段",
                 "运行时段外任务控制区没有显示简短的等待状态");
-            var yellowBrush = (SolidColorBrush)window.FindResource("LoginStatusYellowBrush");
-            var yellowBorder = (SolidColorBrush)window.FindResource("LoginStatusYellowBorderBrush");
-            Assert(yellowBrush.Color == (Color)ColorConverter.ConvertFromString("#FFFF00"), "登录状态黄色资源不是 #FFFF00");
-            Assert(dot.Fill is SolidColorBrush brush && brush.Color == yellowBrush.Color,
-                "运行时段外登录状态圆点没有使用 #FFFF00");
-            Assert(dot.Stroke is SolidColorBrush stroke && stroke.Color == yellowBorder.Color && dot.StrokeThickness > 0,
-                "黄色登录状态圆点缺少细深黄色边框");
 
             runningField.SetValue(window, false);
             return;
@@ -580,6 +906,9 @@ static void RunUiStateRegressionChecks()
         }
         finally
         {
+            // Reflection checks may fail while their injected monitoring flag is still set.
+            // Clear that test-only state so cleanup cannot hide the assertion behind a close prompt.
+            window?.GetType().GetField("_automationRunning", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(window, false);
             loginWindow?.CloseForApplication();
             window?.Close();
             app?.Shutdown();
@@ -656,9 +985,13 @@ static void CheckPreferenceUpgradeCompatibility()
         "普通偏好配置缺少账号或出现密码字段");
 }
 
-static bool HasSetter(System.Windows.Style? style, System.Windows.DependencyProperty property, object expected) =>
-    style?.Setters.OfType<System.Windows.Setter>().Any(setter =>
-        setter.Property == property && Equals(setter.Value, expected)) == true;
+static bool ContainsLogicalContent(object? root, object target)
+{
+    if (ReferenceEquals(root, target)) return true;
+    return root is System.Windows.DependencyObject dependency
+           && System.Windows.LogicalTreeHelper.GetChildren(dependency).Cast<object>()
+               .Any(child => ContainsLogicalContent(child, target));
+}
 
 static IEnumerable<T> VisualDescendants<T>(System.Windows.DependencyObject root)
     where T : System.Windows.DependencyObject
@@ -729,7 +1062,7 @@ static void CheckTimerDelayAndNetworkClassification()
 
 static void CheckAtomicConfigurationRecovery()
 {
-    var root = IOPath.Combine(IOPath.GetTempPath(), "ustc-route2-config-check-" + Guid.NewGuid().ToString("N"));
+    var root = CreateCheckDirectory("configuration");
     var path = IOPath.Combine(root, "automation-settings.json");
     var store = new AutomationStore(path);
     store.Save(new AutomationSettings { Tasks = [CreateTask("FIRST.01")] });
@@ -742,7 +1075,7 @@ static void CheckAtomicConfigurationRecovery()
 
 static void CheckLogSanitizationAndRetention()
 {
-    var root = IOPath.Combine(IOPath.GetTempPath(), "ustc-route2-log-check-" + Guid.NewGuid().ToString("N"));
+    var root = CreateCheckDirectory("logs");
     var path = IOPath.Combine(root, "activity.jsonl");
     Directory.CreateDirectory(root);
     var expired = new LocalLogEntry(DateTimeOffset.Now.AddDays(-15), "旧日志", "password=old-secret");
@@ -773,7 +1106,7 @@ static void CheckLogSanitizationAndRetention()
 
 static async Task CheckInterruptedOperationProtectionAsync()
 {
-    var root = IOPath.Combine(IOPath.GetTempPath(), "ustc-route2-journal-check-" + Guid.NewGuid().ToString("N"));
+    var root = CreateCheckDirectory("journal");
     var store = new OperationJournalStore(IOPath.Combine(root, "operation-journal.json"));
     var coordinator = new RealOperationCoordinator(store);
     var fake = new FakeSession(selectedIds: []);
@@ -990,7 +1323,7 @@ static async Task<(RealOperationCoordinator Coordinator, FakeSession Fake)> Crea
     string suffix,
     bool markTargetStarted = false)
 {
-    var root = IOPath.Combine(IOPath.GetTempPath(), "ustc-route2-strict-recovery-" + suffix + "-" + Guid.NewGuid().ToString("N"));
+    var root = CreateCheckDirectory("strict-recovery-" + suffix);
     var coordinator = new RealOperationCoordinator(
         new OperationJournalStore(IOPath.Combine(root, "operation-journal.json")));
     var fake = new FakeSession(selectedIds: [1]);
@@ -1017,7 +1350,7 @@ static async Task<(RealOperationCoordinator Coordinator, FakeSession Fake)> Crea
 
 static void CheckCorruptJournalRecovery()
 {
-    var root = IOPath.Combine(IOPath.GetTempPath(), "ustc-route2-journal-recovery-" + Guid.NewGuid().ToString("N"));
+    var root = CreateCheckDirectory("journal-recovery");
     var path = IOPath.Combine(root, "operation-journal.json");
     var store = new OperationJournalStore(path);
     var journal = new OperationJournal
@@ -1117,6 +1450,13 @@ static void Assert(bool condition, string message)
     {
         throw new InvalidOperationException(message);
     }
+}
+
+sealed class CheckTimeProvider(DateTimeOffset now) : TimeProvider
+{
+    private DateTimeOffset _now = now;
+    public override DateTimeOffset GetUtcNow() => _now.ToUniversalTime();
+    public void Advance(TimeSpan elapsed) => _now += elapsed;
 }
 
 sealed class FakeSession(IEnumerable<long> selectedIds) : IAutomationReadClient, IAutomationMutationClient

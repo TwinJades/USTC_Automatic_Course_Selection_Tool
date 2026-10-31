@@ -98,6 +98,7 @@ public sealed class AutomationStore(string? path = null)
         foreach (var task in settings.Tasks)
         {
             task.CourseCode ??= string.Empty;
+            task.TurnName ??= string.Empty;
             task.CourseName ??= "待预检查";
             task.Status ??= "等待中";
             task.ConflictingCourseCodes ??= [];

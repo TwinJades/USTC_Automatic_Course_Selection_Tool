@@ -1,0 +1,36 @@
+<Window x:Class="UstcCourseAssistant.Route2.UpdateWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="应用更新" Width="640" Height="540" MinWidth="480" MinHeight="400"
+        WindowStartupLocation="CenterOwner" Background="{StaticResource WindowBackgroundBrush}">
+  <Grid Margin="20">
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="*" />
+      <RowDefinition Height="Auto" />
+      <RowDefinition Height="Auto" />
+    </Grid.RowDefinitions>
+    <StackPanel Margin="0,0,0,12">
+      <TextBlock Text="发现正式版本更新" FontSize="22" FontWeight="SemiBold" />
+      <TextBlock x:Name="VersionsText" Margin="0,8,0,0" />
+      <Button Content="在 GitHub 查看正式发布页" Click="OpenReleaseButton_Click" HorizontalAlignment="Left" Margin="0,8,0,0" />
+    </StackPanel>
+    <TextBox Grid.Row="1" x:Name="ReleaseNotesText" IsReadOnly="True" TextWrapping="Wrap"
+             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" AcceptsReturn="True" />
+    <StackPanel Grid.Row="2" Margin="0,12,0,8">
+      <ProgressBar x:Name="DownloadProgress" Height="6" Minimum="0" Maximum="100" Visibility="Collapsed" />
+      <TextBlock x:Name="UpdateStatusText" Text="下载后将验证附件大小、摘要、ZIP 和程序版本。" TextWrapping="Wrap" Margin="0,8,0,0" />
+      <Border x:Name="InstallConfirmationPanel" Visibility="Collapsed" Background="{StaticResource SurfaceMutedBrush}" Padding="10" Margin="0,8,0,0">
+        <StackPanel>
+          <TextBlock x:Name="InstallConfirmationText" TextWrapping="Wrap" />
+          <CheckBox x:Name="InstallConsentCheckBox" Content="我已了解并同意退出、安装和重新启动" Margin="0,8,0,0" Checked="InstallConsent_Changed" Unchecked="InstallConsent_Changed" />
+        </StackPanel>
+      </Border>
+    </StackPanel>
+    <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right">
+      <Button x:Name="DownloadUpdateButton" Content="下载更新" Click="DownloadUpdateButton_Click" Style="{StaticResource PrimaryButton}" />
+      <Button x:Name="InstallUpdateButton" Content="安装并重启" Visibility="Collapsed" IsEnabled="False" Click="InstallUpdateButton_Click" Style="{StaticResource PrimaryButton}" />
+      <Button x:Name="CancelUpdateButton" Content="取消" Click="CancelUpdateButton_Click" />
+    </StackPanel>
+  </Grid>
+</Window>

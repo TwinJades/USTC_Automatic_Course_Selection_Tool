@@ -7,6 +7,7 @@ public static class AppDataPaths
     public static string Root { get; } = ResolveRoot();
 
     public static string AutomationSettings => Path.Combine(Root, "automation-settings.json");
+    public static string ScheduledSelections => Path.Combine(Root, "scheduled-selections.json");
     public static string OperationJournal => Path.Combine(Root, "operation-journal.json");
     public static string ActivityLog => Path.Combine(Root, "activity.jsonl");
 

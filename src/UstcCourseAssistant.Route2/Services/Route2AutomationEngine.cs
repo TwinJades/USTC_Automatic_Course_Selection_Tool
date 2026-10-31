@@ -37,6 +37,8 @@ public sealed class Route2AutomationEngine(
         CancellationToken cancellationToken)
     {
         var taskList = tasks.OrderBy(item => item.Priority).ToArray();
+        List<Guid>? confirmedSelectedTaskIds = null;
+        List<Guid>? availableTaskIds = null;
         foreach (var task in taskList.Where(item => item.Enabled))
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -77,7 +79,7 @@ public sealed class Route2AutomationEngine(
                 if (targetError.StartsWith("存在多个", StringComparison.Ordinal))
                 {
                     task.Enabled = false;
-                    return new AutomationCycleResult(true, "目标教学班无法唯一确定；任务已停用并暂停监测。");
+                    return Result(true, "目标教学班无法唯一确定；任务已停用并暂停监测。");
                 }
 
                 continue;
@@ -89,8 +91,9 @@ public sealed class Route2AutomationEngine(
             {
                 task.Status = "已选中（最终状态确认）";
                 task.Enabled = false;
+                (confirmedSelectedTaskIds ??= []).Add(task.Id);
                 writeLog("成功", $"{code}：已在当前已选课程中，任务完成。", ActivityEventKind.Detail);
-                DisableConflictingLowerPriorityTasks(taskList, task);
+                AutomationTaskRules.DisableConflictingLowerPriorityTasks(taskList, task, writeLog);
                 continue;
             }
 
@@ -111,6 +114,7 @@ public sealed class Route2AutomationEngine(
 
             if (!executeWhenAvailable)
             {
+                (availableTaskIds ??= []).Add(task.Id);
                 task.Status = $"可选（剩余 {remaining}）";
                 writeLog("只读", $"{code}：检测到 {remaining} 个余量；只读检查未提交操作。", ActivityEventKind.Detail);
                 continue;
@@ -130,7 +134,7 @@ public sealed class Route2AutomationEngine(
                     task.Status = $"冲突课 {conflictCode}：{conflictError}";
                     task.Enabled = false;
                     writeLog("错误", $"{code}：无法唯一确定冲突旧课 {conflictCode}，任务已停用。", ActivityEventKind.Detail);
-                    return new AutomationCycleResult(true, "冲突旧课无法唯一确定。已暂停监测。");
+                    return Result(true, "冲突旧课无法唯一确定。已暂停监测。");
                 }
 
                 if (selectedIds.Contains(conflictLesson.Id))
@@ -171,7 +175,7 @@ public sealed class Route2AutomationEngine(
                         protectedExecutor.RequireManualReview("退旧课失败且旧课恢复不完整。");
                     }
 
-                    return new AutomationCycleResult(true, restored
+                    return Result(true, restored
                         ? "退旧课失败；已恢复此前旧课并暂停监测。"
                         : "退旧课失败且旧课恢复不完整；请立即人工核对。已暂停监测。");
                 }
@@ -194,9 +198,10 @@ public sealed class Route2AutomationEngine(
             {
                 task.Status = "已选中（最终状态确认）";
                 task.Enabled = false;
+                (confirmedSelectedTaskIds ??= []).Add(task.Id);
                 protectedExecutor.CompleteWorkflow("目标课已选中，整个流程最终状态已确认。");
                 writeLog("成功", $"{code}：选课成功并通过最终状态复核。", ActivityEventKind.CourseAdd);
-                DisableConflictingLowerPriorityTasks(taskList, task);
+                AutomationTaskRules.DisableConflictingLowerPriorityTasks(taskList, task, writeLog);
                 continue;
             }
 
@@ -216,12 +221,18 @@ public sealed class Route2AutomationEngine(
                 protectedExecutor.RequireManualReview("目标课未选中且至少一门旧课恢复失败。");
             }
 
-            return new AutomationCycleResult(true, restoreSucceeded
+            return Result(true, restoreSucceeded
                 ? "目标课失败；旧课已恢复，任务已停用并暂停监测。"
                 : "旧课恢复不完整；请立即人工核对。已暂停监测。");
         }
 
-        return new AutomationCycleResult(false, executeWhenAvailable ? "本轮监测完成。" : "本轮只读检查完成。");
+        return Result(false, executeWhenAvailable ? "本轮监测完成。" : "本轮只读检查完成。");
+
+        AutomationCycleResult Result(bool shouldPause, string summary) => new(
+            shouldPause,
+            summary,
+            confirmedSelectedTaskIds is null ? Array.Empty<Guid>() : confirmedSelectedTaskIds,
+            availableTaskIds is null ? Array.Empty<Guid>() : availableTaskIds);
     }
 
     private async Task<bool> RestoreAsync(
@@ -255,28 +266,6 @@ public sealed class Route2AutomationEngine(
         return allRestored;
     }
 
-    private void DisableConflictingLowerPriorityTasks(
-        IEnumerable<AutomationTask> tasks,
-        AutomationTask selectedTask)
-    {
-        foreach (var lower in tasks.Where(item => item.Enabled && item.Priority > selectedTask.Priority))
-        {
-            var conflicts = lower.ConflictingCourseCodes.Contains(
-                                selectedTask.CourseCode,
-                                StringComparer.OrdinalIgnoreCase)
-                            || selectedTask.ConflictingCourseCodes.Contains(
-                                lower.CourseCode,
-                                StringComparer.OrdinalIgnoreCase);
-            if (!conflicts)
-            {
-                continue;
-            }
-
-            lower.Enabled = false;
-            lower.Status = $"已停用：与高优先级 {selectedTask.CourseCode} 冲突";
-            writeLog("信息", $"{lower.CourseCode}：与已选高优先级任务 {selectedTask.CourseCode} 冲突，已停用。", ActivityEventKind.Detail);
-        }
-    }
 
     private static bool TryGetUnique(
         IReadOnlyDictionary<string, LessonInfo[]> byCode,
