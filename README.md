@@ -8,7 +8,7 @@
 
 ## 📥 下载与运行
 
-前往 [GitHub Releases](https://github.com/TwinJades/USTC_Automatic_Course_Selection_Tool/releases) 下载 ZIP，解压后运行 `USTC_Automatic_Course_Selection_Tool_<版本号>.exe`。
+前往 [GitHub Releases](https://github.com/TwinJades/USTC_Automatic_Course_Selection_Tool/releases) 下载 ZIP，解压后运行 `USTC_Automatic_Course_Selection_Tool_<版本号>.exe`。(现在推荐下 2.1.0，2.2.0 的UI 太丑了 我正在更改)
 
 需要 Windows 10/11 x64、WebView2 Runtime，以及能够访问学校教务系统的网络。
 
