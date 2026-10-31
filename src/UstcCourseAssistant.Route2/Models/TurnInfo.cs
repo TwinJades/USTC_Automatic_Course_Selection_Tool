@@ -46,6 +46,9 @@ public sealed record ControlledOperationResponse(
 public sealed class AutomationTask
 {
     public Guid Id { get; init; } = Guid.NewGuid();
+    public long? StudentId { get; set; }
+    public long? TurnId { get; set; }
+    public string TurnName { get; set; } = string.Empty;
     public bool Enabled { get; set; } = true;
     public string CourseCode { get; set; } = string.Empty;
     public string CourseName { get; set; } = "待预检查";
@@ -79,4 +82,4 @@ public sealed record VerifiedMutationResult(
     bool FinallySelected,
     string Message);
 
-public sealed record AutomationCycleResult(bool ShouldPause, string Summary);
+public sealed record AutomationCycleResult(bool ShouldPause, string Summary, IReadOnlyList<Guid>? ConfirmedSelectedTaskIds = null, IReadOnlyList<Guid>? AvailableTaskIds = null);

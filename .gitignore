@@ -39,6 +39,8 @@ USTC Course Assistant/
 USTC Course Assistant Route2/
 preferences.json
 automation-settings.json
+scheduled-selections.json
+updates/
 operation-journal.json
 activity.jsonl
 *.log

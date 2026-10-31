@@ -16,7 +16,8 @@ public enum ActivityEventKind
     CourseAdd,
     CourseDrop,
     CourseRestore,
-    Critical
+    Critical,
+    ScheduledSelection
 }
 
 public sealed record LocalLogEntry(DateTimeOffset At, string Level, string Message)
