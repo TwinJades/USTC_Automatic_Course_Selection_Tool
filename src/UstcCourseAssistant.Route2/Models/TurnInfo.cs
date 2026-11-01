@@ -7,6 +7,8 @@ public sealed record TurnInfo(long Id, string Name, string SemesterName)
 
 public sealed record SessionValidationResult(long StudentId, IReadOnlyList<TurnInfo> OpenTurns);
 
+public sealed record CourseExecutionContext(long StudentId, long TurnId);
+
 public sealed record LessonInfo(
     long Id,
     string Code,
@@ -79,4 +81,4 @@ public sealed record VerifiedMutationResult(
     bool FinallySelected,
     string Message);
 
-public sealed record AutomationCycleResult(bool ShouldPause, string Summary);
+public sealed record AutomationCycleResult(bool ShouldPause, string Summary, IReadOnlyList<Guid>? ConfirmedSelectedTaskIds = null, IReadOnlyList<Guid>? AvailableTaskIds = null);

@@ -15,23 +15,47 @@
     </Grid.RowDefinitions>
 
     <!-- Compact brand header; the application icon remains in the Windows chrome only. -->
-    <Border Grid.Row="0" Background="{StaticResource BrandDarkBrush}" Padding="20,12">
+    <Border Grid.Row="0" Background="{StaticResource BrandDarkBrush}" Padding="20,8">
       <Grid>
         <Grid.ColumnDefinitions>
           <ColumnDefinition Width="*" />
           <ColumnDefinition Width="Auto" />
         </Grid.ColumnDefinitions>
-        <StackPanel VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
           <TextBox x:Name="MainTitleText" Style="{StaticResource CopyableText}" Text="USTC 选课助手"
                    Foreground="White" FontSize="23" FontWeight="SemiBold" />
-          <TextBox x:Name="VersionText" Style="{StaticResource CopyableText}" Text="2.1.0"
-                   Foreground="#C7D7EA" FontSize="11" Margin="0,3,0,0" />
+          <TextBox x:Name="VersionText" Style="{StaticResource CopyableText}"
+                   Foreground="White" FontSize="23" FontWeight="SemiBold" Margin="12,0,0,0" />
         </StackPanel>
-        <Border Grid.Column="1" Background="#24FFFFFF" BorderBrush="#35FFFFFF" BorderThickness="1"
-                CornerRadius="14" Padding="12,6" VerticalAlignment="Center">
-          <TextBox x:Name="UnofficialBadgeText" Style="{StaticResource CopyableText}"
-                   Text="学生自制工具" Foreground="White" FontWeight="SemiBold" />
-        </Border>
+        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+          <Button x:Name="UpdateButton" Style="{StaticResource HeaderIconButton}" Click="UpdateButton_Click"
+                  ToolTip="正在检查更新" AutomationProperties.Name="检查应用更新">
+            <Grid Width="28" Height="28">
+              <Path x:Name="UpdateSpinner" Stroke="White" StrokeThickness="2.5" StrokeStartLineCap="Round"
+                    StrokeEndLineCap="Round" Data="M 24,14 A 10,10 0 1 1 14,4" RenderTransformOrigin="0.5,0.5">
+                <Path.RenderTransform><RotateTransform x:Name="UpdateSpinnerRotation" /></Path.RenderTransform>
+                <Path.Triggers><EventTrigger RoutedEvent="Loaded"><BeginStoryboard><Storyboard>
+                  <DoubleAnimation Storyboard.TargetProperty="(UIElement.RenderTransform).(RotateTransform.Angle)"
+                                   From="0" To="360" Duration="0:0:1" RepeatBehavior="Forever" />
+                </Storyboard></BeginStoryboard></EventTrigger></Path.Triggers>
+              </Path>
+              <Path x:Name="UpdateAvailableIcon" Visibility="Collapsed" Stroke="White" StrokeThickness="2.5"
+                    StrokeLineJoin="Round" Data="M 24,14 A 10,10 0 1 1 4,14 A 10,10 0 1 1 24,14 M 14,21 L 14,8 M 8,14 L 14,8 L 20,14" />
+              <Path x:Name="UpdateCurrentIcon" Visibility="Collapsed" Stroke="White" StrokeThickness="2.5"
+                    StrokeLineJoin="Round" Data="M 24,14 A 10,10 0 1 1 4,14 A 10,10 0 1 1 24,14 M 8,14 L 12,18 L 20,10" />
+              <Path x:Name="UpdateFailedIcon" Visibility="Collapsed" Stroke="White" StrokeThickness="2.5"
+                    Data="M 24,14 A 10,10 0 1 1 4,14 A 10,10 0 1 1 24,14 M 14,7 L 14,16 M 14,19 L 14,21" />
+            </Grid>
+          </Button>
+          <Button x:Name="OnboardingHelpButton" Style="{StaticResource HeaderIconButton}"
+                  ToolTip="查看新手指引" AutomationProperties.Name="查看新手指引" Click="OnboardingHelpButton_Click">
+            <Grid Width="28" Height="28">
+              <Ellipse Width="20" Height="20" Stroke="White" StrokeThickness="2.5" />
+              <TextBlock Text="?" Foreground="White" FontSize="19" FontWeight="Bold"
+                         HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,-1,0,0" />
+            </Grid>
+          </Button>
+        </StackPanel>
       </Grid>
     </Border>
 
@@ -149,72 +173,60 @@
               <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <StackPanel x:Name="AutomationControlPanel" Grid.Row="0" Orientation="Horizontal"
-                        VerticalAlignment="Center" Margin="0,0,0,10">
-              <Button x:Name="StartAutomationButton" Content="开始监测" Click="StartAutomationButton_Click"
-                      Style="{StaticResource PrimaryButton}" />
-              <Button x:Name="PauseAutomationButton" Content="暂停" Click="PauseAutomationButton_Click" />
-              <Button x:Name="CheckAutomationNowButton" Content="立即检查（不选课）" Click="CheckAutomationNowButton_Click" />
-              <TextBox x:Name="AutomationStateText" Style="{StaticResource CopyableText}" Text="未运行"
-                       Foreground="{StaticResource TextSecondaryBrush}" Margin="4,0,0,0" VerticalAlignment="Center" />
-            </StackPanel>
+            <Grid x:Name="AutomationControlPanel" Grid.Row="0" Margin="0,0,0,8">
+              <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+              <WrapPanel>
+                <Button x:Name="StartAutomationButton" Content="开始监测" Click="StartAutomationButton_Click"
+                        Style="{StaticResource PrimaryButton}" />
+                <Button x:Name="PauseAutomationButton" Content="暂停" Click="PauseAutomationButton_Click" />
+                <Button x:Name="CheckAutomationNowButton" Content="立即检查（不选课）" Click="CheckAutomationNowButton_Click" />
+              </WrapPanel>
+              <TextBox Grid.Row="1" x:Name="AutomationStateText" Style="{StaticResource CopyableText}" Text="未运行"
+                       Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0" />
+            </Grid>
 
             <Border Grid.Row="1" Background="{StaticResource SurfaceMutedBrush}" BorderBrush="{StaticResource BorderBrush}"
                     BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,9">
               <Grid>
-                <Grid.RowDefinitions>
-                  <RowDefinition Height="Auto" />
-                  <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="108" />
-                  <ColumnDefinition Width="10" />
-                  <ColumnDefinition Width="86" />
-                  <ColumnDefinition Width="10" />
-                  <ColumnDefinition Width="158" />
-                  <ColumnDefinition Width="10" />
-                  <ColumnDefinition Width="60" />
-                  <ColumnDefinition Width="10" />
-                  <ColumnDefinition Width="80" />
-                  <ColumnDefinition Width="8" />
-                  <ColumnDefinition Width="80" />
-                  <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-                <StackPanel Grid.Column="0">
-                  <TextBox Style="{StaticResource CopyableText}" Text="检查间隔" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <ComboBox x:Name="AutomationIntervalSelector" SelectionChanged="AutomationSettings_Changed" Margin="0,5,0,0">
-                    <ComboBoxItem Content="5 秒" />
-                    <ComboBoxItem Content="15 秒" />
-                    <ComboBoxItem Content="60 秒" />
-                    <ComboBoxItem Content="自定义" />
-                  </ComboBox>
-                </StackPanel>
-                <StackPanel Grid.Column="2">
-                  <TextBox Style="{StaticResource CopyableText}" Text="自定义秒数" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBox x:Name="AutomationCustomIntervalText" Style="{StaticResource CompactAutomationTextBox}"
-                           TextChanged="AutomationSettings_Changed" Margin="0,5,0,0" />
-                </StackPanel>
-                <CheckBox Grid.Column="4" x:Name="AutomationIntervalJitterCheckBox" Content="周期随机抖动（±1/3）"
-                          VerticalAlignment="Bottom" Margin="0,0,0,10"
-                          Checked="AutomationSettings_Changed" Unchecked="AutomationSettings_Changed" />
-                <StackPanel Grid.Column="6">
-                  <TextBox Style="{StaticResource CopyableText}" Text="运行时段" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <CheckBox x:Name="AutomationScheduleCheckBox" Content="启用" Margin="0,12,0,0"
+                <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                <Grid>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="108" /><ColumnDefinition Width="10" />
+                    <ColumnDefinition Width="86" /><ColumnDefinition Width="10" /><ColumnDefinition Width="*" />
+                  </Grid.ColumnDefinitions>
+                  <StackPanel>
+                    <TextBox Style="{StaticResource CopyableText}" Text="检查间隔" />
+                    <ComboBox x:Name="AutomationIntervalSelector" SelectionChanged="AutomationSettings_Changed" Margin="0,5,0,0">
+                      <ComboBoxItem Content="5 秒" /><ComboBoxItem Content="15 秒" />
+                      <ComboBoxItem Content="60 秒" /><ComboBoxItem Content="自定义" />
+                    </ComboBox>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2">
+                    <TextBox Style="{StaticResource CopyableText}" Text="自定义秒数" />
+                    <TextBox x:Name="AutomationCustomIntervalText" Style="{StaticResource CompactAutomationTextBox}"
+                             TextChanged="AutomationSettings_Changed" Margin="0,5,0,0" />
+                  </StackPanel>
+                  <CheckBox Grid.Column="4" x:Name="AutomationIntervalJitterCheckBox" VerticalAlignment="Bottom" Margin="0,0,0,8"
+                            Checked="AutomationSettings_Changed" Unchecked="AutomationSettings_Changed">
+                    <TextBlock Text="周期随机抖动（±1/3）" TextWrapping="Wrap" />
+                  </CheckBox>
+                </Grid>
+                <WrapPanel Grid.Row="1" Margin="0,8,0,0">
+                  <CheckBox x:Name="AutomationScheduleCheckBox" Content="运行时段" Margin="0,20,10,0"
                             Checked="AutomationSettings_Changed" Unchecked="AutomationSettings_Changed" />
-                </StackPanel>
-                <StackPanel Grid.Column="8">
-                  <TextBox Style="{StaticResource CopyableText}" Text="开始" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBox x:Name="AutomationStartTimeText" Style="{StaticResource CompactAutomationTextBox}"
-                           TextChanged="AutomationSettings_Changed" Margin="0,5,0,0" />
-                </StackPanel>
-                <StackPanel Grid.Column="10">
-                  <TextBox Style="{StaticResource CopyableText}" Text="结束" Foreground="{StaticResource TextSecondaryBrush}" />
-                  <TextBox x:Name="AutomationEndTimeText" Style="{StaticResource CompactAutomationTextBox}"
-                           TextChanged="AutomationSettings_Changed" Margin="0,5,0,0" />
-                </StackPanel>
-                <CheckBox Grid.Row="1" Grid.ColumnSpan="12" x:Name="RunAtStartupCheckBox"
-                          Content="开机自动启动程序（不会自动监测）" Margin="0,8,0,0"
-                          Checked="RunAtStartupCheckBox_Changed" Unchecked="RunAtStartupCheckBox_Changed" />
+                  <StackPanel Width="80" Margin="0,0,8,0">
+                    <TextBox Style="{StaticResource CopyableText}" Text="开始" />
+                    <TextBox x:Name="AutomationStartTimeText" Style="{StaticResource CompactAutomationTextBox}"
+                             TextChanged="AutomationSettings_Changed" Margin="0,5,0,0" />
+                  </StackPanel>
+                  <StackPanel Width="80" Margin="0,0,12,0">
+                    <TextBox Style="{StaticResource CopyableText}" Text="结束" />
+                    <TextBox x:Name="AutomationEndTimeText" Style="{StaticResource CompactAutomationTextBox}"
+                             TextChanged="AutomationSettings_Changed" Margin="0,5,0,0" />
+                  </StackPanel>
+                  <CheckBox x:Name="RunAtStartupCheckBox" Width="340" Content="开机自动启动程序（不会自动监测）" Margin="0,20,0,0"
+                            Checked="RunAtStartupCheckBox_Changed" Unchecked="RunAtStartupCheckBox_Changed" />
+                </WrapPanel>
               </Grid>
             </Border>
 
@@ -223,47 +235,8 @@
                       AlternationCount="2" ClipboardCopyMode="IncludeHeader" SelectionMode="Single"
                       SelectionUnit="FullRow" HeadersVisibility="All" RowHeaderWidth="24"
                       RowHeight="34">
-              <DataGrid.Resources>
-                <Style x:Key="AutomationTaskTextCell" TargetType="TextBlock">
-                  <Setter Property="VerticalAlignment" Value="Center" />
-                </Style>
-                <Style x:Key="AutomationTaskDirectInput" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
-                  <Setter Property="VerticalAlignment" Value="Stretch" />
-                  <Setter Property="VerticalContentAlignment" Value="Center" />
-                  <Setter Property="Padding" Value="8,0" />
-                  <Setter Property="Margin" Value="0" />
-                  <Setter Property="BorderThickness" Value="0" />
-                  <Setter Property="Background" Value="Transparent" />
-                  <Setter Property="TextWrapping" Value="NoWrap" />
-                  <Setter Property="Template">
-                    <Setter.Value>
-                      <ControlTemplate TargetType="TextBox">
-                        <Border x:Name="InputBorder" CornerRadius="4"
-                                Background="{TemplateBinding Background}"
-                                BorderBrush="{TemplateBinding BorderBrush}"
-                                BorderThickness="{TemplateBinding BorderThickness}">
-                          <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}" />
-                        </Border>
-                      </ControlTemplate>
-                    </Setter.Value>
-                  </Setter>
-                  <Style.Triggers>
-                    <Trigger Property="IsKeyboardFocusWithin" Value="True">
-                      <Setter Property="Background" Value="White" />
-                      <Setter Property="BorderBrush" Value="{StaticResource AccentBrush}" />
-                      <Setter Property="BorderThickness" Value="1" />
-                    </Trigger>
-                    <Trigger Property="IsEnabled" Value="False">
-                      <Setter Property="Background" Value="Transparent" />
-                      <Setter Property="BorderThickness" Value="0" />
-                      <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-                      <Setter Property="Cursor" Value="Arrow" />
-                    </Trigger>
-                  </Style.Triggers>
-                </Style>
-              </DataGrid.Resources>
               <DataGrid.Columns>
-                <DataGridTemplateColumn Header="启用" Width="52">
+                <DataGridTemplateColumn Header="启用" Width="48">
                   <DataGridTemplateColumn.CellTemplate>
                     <DataTemplate>
                       <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -272,7 +245,7 @@
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTemplateColumn x:Name="AutomationCourseCodeColumn" Header="教学班代码" Width="130">
+                <DataGridTemplateColumn x:Name="AutomationCourseCodeColumn" Header="教学班代码" Width="124">
                   <DataGridTemplateColumn.CellTemplate>
                     <DataTemplate>
                       <TextBox Text="{Binding CourseCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -282,11 +255,11 @@
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="课程名称" Binding="{Binding CourseName}" IsReadOnly="True" Width="1*" MinWidth="180"
+                <DataGridTextColumn Header="课程名称" Binding="{Binding CourseName}" IsReadOnly="True" Width="1*" MinWidth="80"
                                     ElementStyle="{StaticResource AutomationTaskTextCell}" />
-                <DataGridTextColumn Header="优先级" Binding="{Binding Priority}" IsReadOnly="True" Width="66"
+                <DataGridTextColumn Header="优先级" Binding="{Binding Priority}" IsReadOnly="True" Width="52"
                                     ElementStyle="{StaticResource AutomationTaskTextCell}" />
-                <DataGridTemplateColumn Header="冲突旧课（逗号分隔）" Width="190">
+                <DataGridTemplateColumn Header="冲突旧课" Width="1.2*" MinWidth="110">
                   <DataGridTemplateColumn.CellTemplate>
                     <DataTemplate>
                       <TextBox Text="{Binding ConflictsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -296,19 +269,114 @@
                     </DataTemplate>
                   </DataGridTemplateColumn.CellTemplate>
                 </DataGridTemplateColumn>
-                <DataGridTextColumn Header="状态" Binding="{Binding Status}" IsReadOnly="True" Width="210"
+                <DataGridTextColumn Header="状态" Binding="{Binding Status}" IsReadOnly="True" Width="1*" MinWidth="95"
                                     ElementStyle="{StaticResource AutomationTaskTextCell}" />
               </DataGrid.Columns>
             </DataGrid>
 
-            <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="0,9,0,0">
+            <WrapPanel Grid.Row="3" Margin="0,9,0,0">
               <Button x:Name="AddAutomationTaskButton" Content="添加课程" Click="AddAutomationTaskButton_Click" />
               <Button x:Name="DeleteAutomationTaskButton" Content="删除选中项" Click="DeleteAutomationTaskButton_Click" />
               <Button x:Name="MoveAutomationTaskUpButton" Content="优先级上移" Click="MoveAutomationTaskUpButton_Click" />
               <Button x:Name="MoveAutomationTaskDownButton" Content="优先级下移" Click="MoveAutomationTaskDownButton_Click" />
-            </StackPanel>
+            </WrapPanel>
           </Grid>
         </TabItem>
+
+        <TabItem Header="定时抢课">
+          <Grid Margin="8,4,8,8">
+            <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="*" /></Grid.RowDefinitions>
+            <TextBox x:Name="ScheduledSummaryText" Style="{StaticResource CopyableText}" Margin="0,0,0,8" FontWeight="SemiBold" />
+            <Grid Grid.Row="1" x:Name="ScheduledEditorPanel">
+              <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" /><RowDefinition Height="*" MinHeight="94" /><RowDefinition Height="Auto" />
+              </Grid.RowDefinitions>
+              <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="156" Margin="0,0,0,8">
+                <Border Background="{StaticResource SurfaceMutedBrush}" BorderBrush="{StaticResource BorderBrush}"
+                        BorderThickness="1" CornerRadius="9" Padding="12">
+                  <Grid>
+                    <Grid.RowDefinitions><RowDefinition Height="Auto" /><RowDefinition Height="Auto" /></Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="150" /><ColumnDefinition Width="12" /><ColumnDefinition Width="112" />
+                      <ColumnDefinition Width="12" /><ColumnDefinition Width="*" MinWidth="180" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                      <TextBlock Text="执行日期" Margin="0,0,0,4" />
+                      <DatePicker x:Name="ScheduledDatePicker" Height="36" SelectedDateFormat="Short" Language="en-CA"
+                                  ToolTip="yyyy-MM-dd" VerticalContentAlignment="Center" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                      <TextBlock Text="执行时间（北京时间）" FontSize="11" Margin="0,0,0,4" />
+                      <TextBox x:Name="ScheduledTimeText" Height="36" Padding="8,0" ToolTip="HH:mm:ss" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4">
+                      <TextBlock Text="完成后" Margin="0,0,0,4" />
+                      <ComboBox x:Name="ScheduledCompletionSelector" Height="36" SelectedIndex="0">
+                        <ComboBoxItem Content="执行一轮后停止" /><ComboBoxItem Content="剩余课程导入监测" />
+                      </ComboBox>
+                    </StackPanel>
+                    <CheckBox Grid.Row="1" Grid.ColumnSpan="5" x:Name="ScheduledRunWhenMissedCheckBox" Margin="0,8,0,0">
+                      <TextBlock Text="错过预约时间后，下次启动或休眠恢复时仍执行" TextWrapping="Wrap" />
+                    </CheckBox>
+                  </Grid>
+                </Border>
+              </ScrollViewer>
+              <DataGrid Grid.Row="1" x:Name="ScheduledTasksGrid" AutoGenerateColumns="False"
+                        CanUserAddRows="False" CanUserDeleteRows="False" SelectionMode="Single" SelectionUnit="FullRow"
+                        PreviewKeyDown="ScheduledTasksGrid_PreviewKeyDown" ClipboardCopyMode="IncludeHeader"
+                        AlternationCount="2" HeadersVisibility="All" RowHeaderWidth="24" RowHeight="34">
+                <DataGrid.Columns>
+                  <DataGridTemplateColumn Header="启用" Width="48">
+                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                      <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                Click="ScheduledEnabledCheckBox_Click" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTemplateColumn Header="教学班代码" Width="124">
+                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                      <TextBox Text="{Binding CourseCode, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               Style="{StaticResource AutomationTaskDirectInput}" TextChanged="ScheduledTaskInput_TextChanged"
+                               GotKeyboardFocus="ScheduledTaskInput_GotKeyboardFocus" />
+                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTextColumn Header="课程名称" Binding="{Binding CourseName}" IsReadOnly="True" Width="1*" MinWidth="80"
+                                      ElementStyle="{StaticResource AutomationTaskTextCell}" />
+                  <DataGridTextColumn Header="优先级" Binding="{Binding Priority}" IsReadOnly="True" Width="52"
+                                      ElementStyle="{StaticResource AutomationTaskTextCell}" />
+                  <DataGridTemplateColumn Header="冲突旧课" Width="1.2*" MinWidth="110">
+                    <DataGridTemplateColumn.CellTemplate><DataTemplate>
+                      <TextBox Text="{Binding ConflictsText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                               Style="{StaticResource AutomationTaskDirectInput}" TextChanged="ScheduledTaskInput_TextChanged"
+                               GotKeyboardFocus="ScheduledTaskInput_GotKeyboardFocus" />
+                    </DataTemplate></DataGridTemplateColumn.CellTemplate>
+                  </DataGridTemplateColumn>
+                  <DataGridTextColumn Header="状态" Binding="{Binding Status}" IsReadOnly="True" Width="1*" MinWidth="95"
+                                      ElementStyle="{StaticResource AutomationTaskTextCell}" />
+                </DataGrid.Columns>
+              </DataGrid>
+              <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="186" Margin="0,8,0,0">
+                <StackPanel>
+                  <WrapPanel>
+                    <Button x:Name="AddScheduledTaskButton" Content="添加课程" Click="AddScheduledTaskButton_Click" />
+                    <Button x:Name="DeleteScheduledTaskButton" Content="删除选中项" Click="DeleteScheduledTaskButton_Click" />
+                    <Button x:Name="MoveScheduledTaskUpButton" Content="优先级上移" Click="MoveScheduledTaskUpButton_Click" />
+                    <Button x:Name="MoveScheduledTaskDownButton" Content="优先级下移" Click="MoveScheduledTaskDownButton_Click" />
+                  </WrapPanel>
+                  <CheckBox x:Name="ScheduledAuthorizationCheckBox" Margin="0,8,0,8">
+                    <TextBlock Text="授权本预约执行真实选退课及所选完成方式" TextWrapping="Wrap" />
+                  </CheckBox>
+                  <WrapPanel>
+                    <Button x:Name="ArmScheduledButton" Content="启用预约" Click="ArmScheduledButton_Click" Style="{StaticResource PrimaryButton}" />
+                    <Button x:Name="SaveScheduledButton" Content="保存草稿" Click="SaveScheduledButton_Click" />
+                    <Button x:Name="CancelScheduledButton" Content="取消预约" Click="CancelScheduledButton_Click" />
+                  </WrapPanel>
+                  <TextBox x:Name="ScheduledStatusText" Style="{StaticResource CopyableText}" Margin="0,8,0,0" />
+                </StackPanel>
+              </ScrollViewer>
+            </Grid>
+          </Grid>
+        </TabItem>
+
 
         <TabItem Header="活动记录">
           <Grid Margin="8,4,8,8">
@@ -535,17 +603,9 @@
     </Grid>
 
     <Border Grid.Row="4" Background="#EAF0F7" BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0" Padding="16,7">
-      <DockPanel>
-        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-          <Button x:Name="OnboardingHelpButton" Content="?" Style="{StaticResource OnboardingHelpButton}"
-                  ToolTip="查看新手指引" Click="OnboardingHelpButton_Click" />
-          <TextBox Style="{StaticResource CopyableText}"
-                   Text="非官方学生工具，与中国科学技术大学无隶属、合作或授权关系。"
-                   Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" VerticalAlignment="Center" />
-        </StackPanel>
-        <TextBox Style="{StaticResource CopyableText}" Text="仅供本人及少量同学私下免费使用 · 不公开发布 · 不开源"
-                 Foreground="{StaticResource TextMutedBrush}" FontSize="11" HorizontalAlignment="Right" />
-      </DockPanel>
+      <TextBox Style="{StaticResource CopyableText}"
+               Text="非官方学生工具，与中国科学技术大学无隶属、合作或授权关系。"
+               Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" VerticalAlignment="Center" />
     </Border>
 
     <Canvas x:Name="OnboardingOverlay" Grid.RowSpan="5" Panel.ZIndex="100" Visibility="Collapsed"

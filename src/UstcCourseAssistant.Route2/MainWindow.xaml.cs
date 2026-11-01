@@ -38,6 +38,8 @@ public partial class MainWindow : Window
     private readonly RealOperationCoordinator _realOperations;
     private CancellationTokenSource? _validationCancellation;
     private SessionValidationResult? _sessionValidation;
+    private CourseExecutionContext? _monitoringContext;
+    private bool _refreshingTurns;
     private LoginWindow? _loginWindow;
     private LessonInfo? _controlledLesson;
     private CourseMutationKind _precheckedMutationKind;
@@ -94,12 +96,11 @@ public partial class MainWindow : Window
         var automationLoad = _automationStore.Load();
         _configurationLoadWarning = automationLoad.Warning;
         _automationSettings = automationLoad.Settings;
-        foreach (var task in _automationSettings.Tasks.OrderBy(item => item.Priority))
+        foreach (var task in _automationSettings.Tasks)
         {
             _automationTasks.Add(task);
         }
 
-        RenumberAutomationPriorities();
         LoadAutomationSettingsIntoUi();
         try
         {
@@ -132,6 +133,7 @@ public partial class MainWindow : Window
         }
 
         RefreshInterruptedOperationBanner();
+        InitializeScheduling();
         SubscribeSystemSafetyEvents();
         Loaded += MainWindow_Loaded;
         Closing += MainWindow_Closing;
@@ -169,6 +171,7 @@ public partial class MainWindow : Window
         }
 
         SetBusy(false);
+        _ = InitializeUpdatesAsync();
         if (_shouldAutoShowOnboarding)
         {
             Dispatcher.BeginInvoke(() => ShowOnboarding(), DispatcherPriority.ContextIdle);
@@ -192,7 +195,7 @@ public partial class MainWindow : Window
         };
         _loginWindow.AuthenticatedPageReached += async (_, _) =>
         {
-            await TryAutoValidateAsync();
+            if (!_scheduledLoginActive) await TryAutoValidateAsync();
         };
         _loginWindow.AutoLoginStatusChanged += (_, args) =>
         {
@@ -389,7 +392,8 @@ public partial class MainWindow : Window
 
     private void UpdateAccountSecurityControls()
     {
-        var editable = !_isBusy && !_automationRunning;
+        var editable = !_isBusy && !_automationRunning && !_realOperations.IsOperationInProgress
+            && !_scheduledRunning && !_updateInstalling;
         SavedAccountTextBox.IsEnabled = editable;
         SavedPasswordBox.IsEnabled = editable;
         SaveCredentialButton.IsEnabled = editable;
@@ -411,6 +415,9 @@ public partial class MainWindow : Window
 
     private void ResetSessionUi(string message)
     {
+        InvalidateWriteSession();
+        CancelMonitoringWaiting();
+        _mutationEpoch++;
         _sessionValidation = null;
         _turns.Clear();
         _targetLessons.Clear();
@@ -438,11 +445,13 @@ public partial class MainWindow : Window
             return false;
         }
 
+        if (_scheduledRunning) return false;
         if (_isBusy)
         {
             return _sessionValidation is not null;
         }
 
+        var selectedTurnId = (TurnSelector.SelectedItem as TurnInfo)?.Id;
         _validationCancellation?.Cancel();
         _validationCancellation?.Dispose();
         _validationCancellation = new CancellationTokenSource();
@@ -454,44 +463,32 @@ public partial class MainWindow : Window
             automatic ? "检测到已登录页面，开始自动识别只读会话。" : "开始手动只读会话验证。",
             "只读",
             ActivityEventKind.Verification);
-        _sessionValidation = null;
-        _turns.Clear();
-        _targetLessons.Clear();
-        _selectedLessons.Clear();
-        StudentIdText.Text = "正在验证…";
-        NoTurnsText.Text = "正在读取…";
-        SnapshotSummaryText.Text = "请等待会话验证完成。";
-
         try
         {
             using var bridge = await _loginWindow.CreateSessionBridgeAsync(cancellationToken);
             var client = new ReadOnlyEamsClient(bridge);
             var result = await client.ValidateAsync(cancellationToken);
-            _sessionValidation = result;
-
-            StudentIdText.Text = result.StudentId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-            foreach (var turn in result.OpenTurns)
-            {
-                _turns.Add(turn);
-            }
-
-            NoTurnsText.Text = _turns.Count == 0 ? "当前没有开放的选课轮次。" : string.Empty;
-            if (_turns.Count > 0)
-            {
-                TurnSelector.SelectedIndex = 0;
-                SnapshotSummaryText.Text = "请选择目标教学班代码，然后读取课程与人数。";
-            }
-            else
-            {
-                SnapshotSummaryText.Text = "当前没有可用于影子验证的开放轮次。";
-            }
+            cancellationToken.ThrowIfCancellationRequested();
+            ApplyRecoveredSession(result, selectedTurnId ?? -1);
+            _targetLessons.Clear();
+            _selectedLessons.Clear();
+            SnapshotSummaryText.Text = _turns.Count > 0
+                ? "请选择目标教学班代码，然后读取课程与人数。"
+                : "当前没有可用于影子验证的开放轮次。";
 
             SetStatus("只读会话验证成功。", StatusKind.Success);
             AddActivity($"只读会话验证成功；读取到 {_turns.Count} 个开放轮次。", "成功", ActivityEventKind.Verification);
             return true;
         }
+        catch (InvalidOperationException ex)
+        {
+            SetStatus(ex.Message, StatusKind.Error);
+            AddActivity(ex.Message, "暂停", ActivityEventKind.Verification);
+            return false;
+        }
         catch (AuthenticationRequiredException)
         {
+            PauseAutomation("认证会话失效，监测已暂停。", "暂停");
             _sessionValidation = null;
             StudentIdText.Text = "需要重新认证";
             NoTurnsText.Text = "请在教务系统窗口重新完成登录后再验证。";
@@ -508,6 +505,7 @@ public partial class MainWindow : Window
         }
         catch (JsonException)
         {
+            PauseAutomation("接口返回格式发生变化，监测已暂停。", "暂停");
             _sessionValidation = null;
             StudentIdText.Text = "验证失败";
             NoTurnsText.Text = "接口返回格式与预期不一致。";
@@ -517,6 +515,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            PauseAutomation("会话验证失败，监测已暂停。", "暂停");
             _sessionValidation = null;
             StudentIdText.Text = "验证失败";
             NoTurnsText.Text = "未读取到开放轮次。";
@@ -720,8 +719,7 @@ public partial class MainWindow : Window
             return;
         }
 
-        // The enable box remains a direct action, but the same click also establishes
-        // the row targeted by delete and priority movement commands.
+        // 启用复选框直接切换，同时选中对应行以便删除和调整优先级。
         task.Enabled = ((CheckBox)sender).IsChecked == true;
         AutomationTasksGrid.SelectedItem = task;
         AutomationTasksGrid.CurrentItem = task;
@@ -757,17 +755,19 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (TurnSelector.SelectedItem is not TurnInfo turn)
+        if (!TryCaptureMonitoringContext(out var context, out validationMessage))
         {
-            SetStatus("当前没有开放的选课轮次。", StatusKind.Error);
+            SetStatus(validationMessage, StatusKind.Error);
             return;
         }
+        var turn = (TurnInfo)TurnSelector.SelectedItem;
 
         var enabledCount = _automationTasks.Count(item => item.Enabled);
         var confirmation = MessageBox.Show(
             this,
             $"即将启动路线二自动监测。检测到余量时，程序会按优先级对 {enabledCount} 个启用任务执行真实选退课。{Environment.NewLine}{Environment.NewLine}" +
             $"当前轮次：{turn.DisplayText}{Environment.NewLine}" +
+            string.Join(Environment.NewLine, _automationTasks.Where(task => task.Enabled).Select(task => task.CourseCode)) + Environment.NewLine +
             "所有写操作严格串行且不会重试；目标课失败时会尝试恢复本轮已退旧课。是否确认开始？",
             "确认启动真实任务监测",
             MessageBoxButton.YesNo,
@@ -778,9 +778,11 @@ public partial class MainWindow : Window
             return;
         }
 
-        InvalidateControlledPrecheck("任务监测即将启动；单门操作预检查已失效。若之后需要单门操作，请重新预检查。");
-        SaveAutomationSettings();
-        _automationRunning = true;
+        if (!TryStartMonitoring(context!, scheduledAuthorization: false, out validationMessage))
+        {
+            SetStatus(validationMessage, StatusKind.Error);
+            return;
+        }
         AutomationStateText.Text = "监测中";
         AddActivity(
             _automationSettings.EnableIntervalJitter
@@ -794,6 +796,87 @@ public partial class MainWindow : Window
         {
             ScheduleNextAutomationTick();
         }
+    }
+
+    private bool TryCaptureMonitoringContext(out CourseExecutionContext? context, out string reason)
+    {
+        context = null;
+        if (_sessionValidation is not { } session || TurnSelector.SelectedItem is not TurnInfo turn
+            || session.OpenTurns.All(item => item.Id != turn.Id))
+        {
+            reason = "请先验证会话并选择当前开放的选课轮次。";
+            return false;
+        }
+        context = new CourseExecutionContext(session.StudentId, turn.Id);
+        reason = string.Empty;
+        return true;
+    }
+
+    private bool TryStartMonitoring(CourseExecutionContext context, bool scheduledAuthorization, out string reason, bool validateOnly = false)
+    {
+        if (!ValidateAutomationTasks(out reason) || !TryReadAutomationSchedule(out reason)) return false;
+        if (_realOperations.HasUnresolvedOperation || _realOperations.IsOperationInProgress
+            || _updateInstalling || _updateHandshakePending || _isBusy || _manualWriteWaiting
+            || _loginWindow?.IsBrowserReady != true || (_automationCycleActive && !_automationRunning)
+            || (!scheduledAuthorization && _scheduledRunning)
+            || (scheduledAuthorization && _automaticWritesPaused))
+        {
+            reason = "真实操作安全保护或自动写入暂停尚未解除，不能启动监测。";
+            return false;
+        }
+        if (_sessionValidation is not { } session || session.StudentId != context.StudentId
+            || session.OpenTurns.All(turn => turn.Id != context.TurnId))
+        {
+            reason = "课程已导入，请验证会话后开始监测。";
+            return false;
+        }
+        if (_automationRunning)
+        {
+            if (_monitoringContext == context && IsCurrentContext(context)
+                && AutomationArmCheckBox.IsChecked == true)
+            {
+                reason = string.Empty;
+                return true;
+            }
+            reason = "当前监测账号或轮次与预约执行上下文不一致。";
+            return false;
+        }
+        if (!scheduledAuthorization && (AutomationArmCheckBox.IsChecked != true || !IsCurrentContext(context)))
+        {
+            reason = "监测授权或当前轮次已变化，请重新确认。";
+            return false;
+        }
+        if (validateOnly)
+        {
+            reason = string.Empty;
+            return true;
+        }
+        if (!SaveAutomationBeforeExecution())
+        {
+            reason = "监测配置保存失败，未启动监测。";
+            return false;
+        }
+        _refreshingTurns = true;
+        try { TurnSelector.SelectedItem = _turns.First(turn => turn.Id == context.TurnId); }
+        finally { _refreshingTurns = false; }
+        CancelMonitoringWaiting();
+        _mutationEpoch++;
+        _monitoringContext = context;
+        _automaticWritesPaused = false;
+        AutomationArmCheckBox.IsChecked = true;
+        InvalidateControlledPrecheck("任务监测即将启动；单门操作预检查已失效。");
+        _automationRunning = true;
+        AutomationStateText.Text = "监测中";
+        SetBusy(_isBusy);
+        reason = string.Empty;
+        return true;
+    }
+
+    private bool TryStartMonitoringFromScheduled(CourseExecutionContext context, out string reason, bool validateOnly = false)
+    {
+        if (!TryStartMonitoring(context, scheduledAuthorization: true, out reason, validateOnly)) return false;
+        if (!validateOnly && !_automationTimer.IsEnabled) ScheduleNextAutomationTick();
+        return true;
     }
 
     private void HighlightAutomationArmConfirmation()
@@ -881,143 +964,112 @@ public partial class MainWindow : Window
 
     private async Task RunAutomationCycleAsync(bool executeWhenAvailable)
     {
-        if (_automationCycleActive || _isBusy || (executeWhenAvailable && !_automationRunning))
+        if (_automationCycleActive || _isBusy || _updateInstalling || _updateHandshakePending
+            || (executeWhenAvailable && !_automationRunning))
         {
             return;
         }
-
         if (executeWhenAvailable && !IsInAutomationSchedule())
         {
-            var waitMessage = $"当前不在运行时段（{_automationSettings.StartAt:HH:mm}–{_automationSettings.EndAt:HH:mm}），监测等待中。";
             AutomationStateText.Text = "等待运行时段";
-            SetStatus(waitMessage, StatusKind.Warning);
             return;
         }
-
-        if (_loginWindow is null || !_loginWindow.IsBrowserReady)
+        if (_loginWindow?.IsBrowserReady != true || _sessionValidation is null)
         {
-            if (executeWhenAvailable)
-            {
-                PauseAutomation("教务系统窗口尚未打开，监测已暂停。", "暂停");
-            }
-            else
-            {
-                SetStatus("请先打开教务系统。", StatusKind.Error);
-            }
-
+            if (executeWhenAvailable) PauseAutomation("会话尚未验证，监测已暂停。", "暂停");
             return;
         }
-
-        if (_sessionValidation is null && !await ValidateSessionAsync(automatic: true))
+        if (!TryCaptureMonitoringContext(out var capturedContext, out var contextError))
         {
-            if (executeWhenAvailable)
-            {
-                PauseAutomation("会话验证失败，监测已暂停。", "暂停");
-            }
-
+            if (executeWhenAvailable) PauseAutomation(contextError, "暂停");
+            SetStatus(contextError, StatusKind.Error);
             return;
         }
-
-        if (_sessionValidation is not { } session || TurnSelector.SelectedItem is not TurnInfo turn)
+        var context = capturedContext!;
+        if (executeWhenAvailable && _monitoringContext != context)
         {
-            if (executeWhenAvailable)
-            {
-                PauseAutomation("没有可用选课轮次，监测已暂停。", "暂停");
-            }
-            else
-            {
-                SetStatus("当前没有可用选课轮次。", StatusKind.Error);
-            }
-
+            PauseAutomation("当前账号或轮次已经变化，监测已暂停。", "暂停");
             return;
         }
 
-        _validationCancellation?.Cancel();
-        _validationCancellation?.Dispose();
-        _validationCancellation = new CancellationTokenSource();
-        var cancellationToken = _validationCancellation.Token;
+        _monitoringReadCancellation?.Dispose();
+        _monitoringReadCancellation = new CancellationTokenSource();
+        var token = _monitoringReadCancellation.Token;
+        var epoch = _mutationEpoch;
+        var snapshot = _automationTasks.Select(task => ScheduledSelectionService.CopyTask(task)).ToArray();
         _automationCycleActive = true;
-        AutomationStateText.Text = executeWhenAvailable ? "监测中" : "只读检查中";
-        SetBusy(true);
-        SetStatus(executeWhenAvailable ? "正在执行串行任务监测…" : "正在执行任务只读检查…", StatusKind.Working);
-        AddActivity(executeWhenAvailable ? "开始一轮串行任务监测。" : "开始一轮任务只读检查。", executeWhenAvailable ? "监测" : "只读");
-
+        UpdateAutomationControls();
         try
         {
-            using var bridge = await _loginWindow.CreateSessionBridgeAsync(cancellationToken);
-            var readClient = new ReadOnlyEamsClient(bridge);
-            var mutationClient = new ControlledEamsClient(bridge);
-            using var operationLease = executeWhenAvailable
-                ? await _realOperations.EnterAsync("任务监测", readClient, mutationClient, cancellationToken)
-                : null;
-            var engine = new Route2AutomationEngine(
-                readClient,
-                operationLease,
-                session.StudentId,
-                turn.Id,
-                (level, message, kind) => AddActivity(message, level, kind));
-            var result = await engine.RunOnceAsync(
-                _automationTasks,
-                executeWhenAvailable,
-                cancellationToken);
-            AutomationTasksGrid.Items.Refresh();
+            using var bridge = await _loginWindow.CreateSessionBridgeAsync(token);
+            var reader = new ReadOnlyEamsClient(bridge);
+            var validation = await reader.ValidateAsync(token);
+            token.ThrowIfCancellationRequested();
+            if (validation.StudentId != context.StudentId || validation.OpenTurns.All(turn => turn.Id != context.TurnId))
+                throw new InvalidOperationException("当前账号或选课轮次已经变化，监测已停止。");
+            foreach (var task in snapshot.Where(task => task.Enabled).OrderBy(task => task.Priority))
+            {
+                if (!task.Enabled) continue;
+                token.ThrowIfCancellationRequested();
+                if (_mutationEpoch != epoch || !IsCurrentContext(context)
+                    || (executeWhenAvailable && _monitoringContext != context)) break;
+                var engine = new Route2AutomationEngine(reader, null, context.StudentId, context.TurnId,
+                    (level, message, kind) => AddActivity(message, level, kind));
+                var result = await engine.RunOnceAsync([task], false, token);
+                token.ThrowIfCancellationRequested();
+                if (_mutationEpoch != epoch || !IsCurrentContext(context)
+                    || (executeWhenAvailable && _monitoringContext != context)) break;
+                MergeMonitoringSnapshot(task, epoch, context);
+                if (result.ConfirmedSelectedTaskIds?.Contains(task.Id) == true)
+                {
+                    var actual = _automationTasks.FirstOrDefault(item => item.Id == task.Id);
+                    if (actual is not null) AutomationTaskRules.DisableConflictingLowerPriorityTasks(
+                        _automationTasks, actual, (level, message, kind) => AddActivity(message, level, kind));
+                    AutomationTaskRules.DisableConflictingLowerPriorityTasks(snapshot, task,
+                        (level, message, kind) => AddActivity(message, level, kind));
+                }
+                if (result.ShouldPause)
+                {
+                    PauseAutomation(result.Summary, "暂停");
+                    break;
+                }
+                if (executeWhenAvailable && _automationRunning && result.AvailableTaskIds?.Contains(task.Id) == true)
+                    QueueMonitoringWrite(task.Id, context);
+            }
             SaveAutomationSettings();
-
-            if (result.ShouldPause)
-            {
-                PauseAutomation(result.Summary, "暂停");
-                SetStatus(result.Summary, StatusKind.Error);
-            }
-            else if (executeWhenAvailable && !_automationTasks.Any(item => item.Enabled))
-            {
-                PauseAutomation("所有启用任务均已完成，监测已自动停止。", "成功");
-                SetStatus("所有任务已完成。", StatusKind.Success);
-            }
-            else
-            {
-                AutomationStateText.Text = executeWhenAvailable ? "监测中" : "只读检查完成";
-                SetStatus(result.Summary, StatusKind.Success);
-            }
+            if (executeWhenAvailable && !_automationTasks.Any(task => task.Enabled))
+                PauseAutomation("所有启用任务均已完成。", "成功");
+            else if (!executeWhenAvailable || _automationRunning)
+                AutomationStateText.Text = _monitoringPending.Count > 0 ? "监测中，等待执行选退课" : executeWhenAvailable ? "监测中" : "只读检查完成";
         }
         catch (AuthenticationRequiredException)
         {
             ResetSessionUi("认证会话已经失效，请重新登录。");
-            PauseAutomation("认证会话失效，监测已暂停。请人工核对当前已选课程。", "暂停");
-            SetStatus("认证会话失效，任务引擎已停止。", StatusKind.Error);
+            PauseAutomation("认证会话失效，监测已暂停。", "暂停");
             RequestAuthenticationAfterSessionExpiry();
         }
-        catch (Exception ex) when (NetworkFailureClassifier.IsTransientReadFailure(
-                                       ex,
-                                       cancellationToken.IsCancellationRequested)
+        catch (Exception ex) when (NetworkFailureClassifier.IsTransientReadFailure(ex, token.IsCancellationRequested)
                                    && !_realOperations.HasUnresolvedOperation)
         {
-            BeginReadNetworkRecoveryWait("纯读取网络请求超时；尚未开始任何真实写入，监测等待网络恢复。");
+            BeginReadNetworkRecoveryWait("只读请求失败，监测等待网络恢复。");
         }
         catch (OperationCanceledException)
         {
-            if (_readNetworkRecoveryPending && !_realOperations.HasUnresolvedOperation)
-            {
-                SetStatus("纯读取请求已停止；未发送真实写入，正在等待网络恢复。", StatusKind.Warning);
-            }
-            else
-            {
-                PauseAutomation("任务等待被取消；结果可能不确定，请人工核对后再启动。", "暂停");
-                SetStatus("任务结果可能不确定，禁止立即重启监测。", StatusKind.Error);
-            }
+            AddActivity("监测只读请求已取消。", "信息");
         }
         catch (Exception ex)
         {
-            PauseAutomation("任务引擎遇到异常，已暂停。请人工核对当前已选课程。", "错误");
+            PauseAutomation(ex.Message, "错误");
             SetStatus(ex.Message, StatusKind.Error);
-            AddActivity(ex.Message, "错误");
         }
         finally
         {
             _automationCycleActive = false;
+            _monitoringReadCancellation?.Dispose();
+            _monitoringReadCancellation = null;
             AutomationTasksGrid.Items.Refresh();
-            SaveAutomationSettings();
             RefreshInterruptedOperationBanner();
-            SetBusy(false);
+            UpdateAutomationControls();
         }
     }
 
@@ -1027,7 +1079,10 @@ public partial class MainWindow : Window
         _automationTimer.Stop();
         ClearAutomationTimerPlan();
         _readNetworkRecoveryPending = false;
+        CancelMonitoringWaiting();
         _automationRunning = false;
+        _monitoringContext = null;
+        _mutationEpoch++;
         AutomationArmCheckBox.IsChecked = false;
         AutomationStateText.Text = level == "成功" ? "已完成" : "已暂停";
         AddActivity(message, level, wasMonitoring ? ActivityEventKind.MonitoringStopped : ActivityEventKind.Detail);
@@ -1037,7 +1092,7 @@ public partial class MainWindow : Window
 
     private void AddAutomationTaskButton_Click(object sender, RoutedEventArgs e)
     {
-        var task = new AutomationTask { Priority = _automationTasks.Count + 1 };
+        var task = new AutomationTask { Priority = _automationTasks.Count == 0 ? 1 : _automationTasks.Max(item => item.Priority) + 1 };
         _automationTasks.Add(task);
         SaveAutomationSettings();
         Dispatcher.BeginInvoke(() =>
@@ -1105,9 +1160,11 @@ public partial class MainWindow : Window
         AutomationTasksGrid?.Items.Refresh();
     }
 
-    private bool ValidateAutomationTasks(out string message)
+    private bool ValidateAutomationTasks(out string message) => ValidateCourseTasks(_automationTasks, out message);
+
+    private static bool ValidateCourseTasks(IEnumerable<AutomationTask> tasks, out string message)
     {
-        var enabled = _automationTasks.Where(item => item.Enabled).ToArray();
+        var enabled = tasks.Where(item => item.Enabled).ToArray();
         if (enabled.Length == 0)
         {
             message = "请至少添加并启用一个任务。";
@@ -1121,22 +1178,25 @@ public partial class MainWindow : Window
             if (parsed.Count != 1 || !parsed[0].Equals(code, StringComparison.OrdinalIgnoreCase))
             {
                 message = $"任务“{code}”不是一个完整、唯一的教学班代码。";
+                task.Status = message;
                 return false;
             }
 
-            if (task.ConflictingCourseCodes.Contains(code, StringComparer.OrdinalIgnoreCase))
+            if (task.ConflictingCourseCodes.Any(conflict => conflict.Trim().Equals(code, StringComparison.OrdinalIgnoreCase)))
             {
                 message = $"任务 {code} 的冲突旧课不能包含目标课自身。";
+                task.Status = message;
                 return false;
             }
         }
 
-        var duplicate = enabled
-            .GroupBy(item => item.CourseCode.Trim(), StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault(group => group.Count() > 1);
-        if (duplicate is not null)
+        var duplicates = enabled.GroupBy(item => item.CourseCode.Trim(), StringComparer.OrdinalIgnoreCase)
+            .Where(group => group.Count() > 1).ToArray();
+        if (duplicates.Length > 0)
         {
-            message = $"教学班 {duplicate.Key} 存在重复启用任务。";
+            message = "存在重复启用的教学班代码：" + string.Join("、", duplicates.Select(group => group.Key)) + "。";
+            foreach (var group in duplicates)
+                foreach (var task in group) task.Status = $"教学班 {group.Key} 存在重复启用任务。";
             return false;
         }
 
@@ -1147,9 +1207,16 @@ public partial class MainWindow : Window
     private void CommitAutomationEdits()
     {
         _automationTaskSaveTimer.Stop();
-        AutomationTasksGrid.CommitEdit(DataGridEditingUnit.Cell, true);
-        AutomationTasksGrid.CommitEdit(DataGridEditingUnit.Row, true);
+        CommitCourseEdits(AutomationTasksGrid);
         SaveAutomationSettings();
+    }
+
+    private static void CommitCourseEdits(DataGrid grid)
+    {
+        if (Keyboard.FocusedElement is TextBox input && grid.IsAncestorOf(input))
+            input.GetBindingExpression(TextBox.TextProperty)?.UpdateSource();
+        grid.CommitEdit(DataGridEditingUnit.Cell, true);
+        grid.CommitEdit(DataGridEditingUnit.Row, true);
     }
 
     private int GetAutomationInterval() => AutomationIntervalSelector.SelectedIndex switch
@@ -1246,7 +1313,7 @@ public partial class MainWindow : Window
             _automationSettings.EndAt = end;
         }
 
-        _automationSettings.Tasks = _automationTasks.OrderBy(item => item.Priority).ToList();
+        _automationSettings.Tasks = _automationTasks.ToList();
         try
         {
             _automationStore.Save(_automationSettings);
@@ -1602,15 +1669,15 @@ public partial class MainWindow : Window
 
         if (!_readNetworkRecoveryPending)
         {
-            if (_sessionValidation is not { } session || TurnSelector.SelectedItem is not TurnInfo turn)
+            if (_monitoringContext is not { } context || !IsCurrentContext(context))
             {
                 PauseAutomation("网络异常时无法保留已验证的账号和轮次；监测已暂停，请人工重新验证。", "暂停");
                 SetStatus("无法安全进入网络恢复等待，必须人工重新验证。", StatusKind.Error);
                 return;
             }
 
-            _readRecoveryStudentId = session.StudentId;
-            _readRecoveryTurnId = turn.Id;
+            _readRecoveryStudentId = context.StudentId;
+            _readRecoveryTurnId = context.TurnId;
             _readNetworkRecoveryPending = true;
             AddActivity(message, "网络等待");
         }
@@ -1618,7 +1685,8 @@ public partial class MainWindow : Window
         _automationTimer.Stop();
         ClearAutomationTimerPlan();
         _validationCancellation?.Cancel();
-        ResetSessionUi("纯读取网络请求已停止；等待网络恢复后执行一次只读会话验证。");
+        CancelMonitoringWaiting();
+        _monitoringReadCancellation?.Cancel();
         AutomationStateText.Text = "等待网络恢复";
         SetStatus("网络暂不可用；尚未开始真实写入，监测正在等待恢复。", StatusKind.Warning);
         ScheduleReadNetworkRecoveryTick();
@@ -1662,8 +1730,11 @@ public partial class MainWindow : Window
             using var bridge = await _loginWindow.CreateSessionBridgeAsync(cancellationToken);
             var client = new ReadOnlyEamsClient(bridge);
             var result = await client.ValidateAsync(cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!_readNetworkRecoveryPending || !_automationRunning) return;
             if (result.StudentId != _readRecoveryStudentId
-                || result.OpenTurns.All(turn => turn.Id != _readRecoveryTurnId))
+                || result.OpenTurns.All(turn => turn.Id != _readRecoveryTurnId)
+                || _monitoringContext != new CourseExecutionContext(_readRecoveryStudentId, _readRecoveryTurnId))
             {
                 _readNetworkRecoveryPending = false;
                 PauseAutomation("网络恢复后的账号或选课轮次与中断前不一致；禁止自动继续。", "暂停");
@@ -1727,17 +1798,38 @@ public partial class MainWindow : Window
 
     private void ApplyRecoveredSession(SessionValidationResult result, long selectedTurnId)
     {
-        _sessionValidation = result;
-        _turns.Clear();
-        foreach (var turn in result.OpenTurns)
+        var context = _monitoringContext ?? _scheduledContext;
+        if (context is not null && (result.StudentId != context.StudentId
+            || result.OpenTurns.All(turn => turn.Id != context.TurnId)
+            || (selectedTurnId > 0 && selectedTurnId != context.TurnId)))
         {
-            _turns.Add(turn);
+            InvalidateWriteSession();
+            PauseAutomation("验证后的账号或轮次与运行上下文不一致；禁止继续真实操作。", "暂停");
+            throw new InvalidOperationException("运行账号发生变化或原轮次已关闭，请人工核对后重新启用。");
         }
-
+        var expectedTurnId = context?.TurnId ?? (selectedTurnId > 0 ? selectedTurnId : (long?)null);
+        var selected = expectedTurnId is { } id
+            ? result.OpenTurns.FirstOrDefault(turn => turn.Id == id)
+            : result.OpenTurns.FirstOrDefault();
+        if (_sessionValidation?.StudentId != result.StudentId
+            || (TurnSelector.SelectedItem as TurnInfo)?.Id != selected?.Id)
+        {
+            InvalidateWriteSession();
+            CancelMonitoringWaiting();
+            _mutationEpoch++;
+        }
+        _refreshingTurns = true;
+        try
+        {
+            _sessionValidation = result;
+            _turns.Clear();
+            foreach (var turn in result.OpenTurns) _turns.Add(turn);
+            TurnSelector.SelectedItem = selected;
+        }
+        finally { _refreshingTurns = false; }
         StudentIdText.Text = result.StudentId.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        TurnSelector.SelectedItem = _turns.First(turn => turn.Id == selectedTurnId);
-        NoTurnsText.Text = string.Empty;
-        SnapshotSummaryText.Text = "网络恢复验证成功；等待下一轮监测。";
+        NoTurnsText.Text = _turns.Count == 0 ? "当前没有开放的选课轮次。" : string.Empty;
+        SnapshotSummaryText.Text = "会话验证成功。";
     }
 
     private void NetworkAvailabilityChanged(object? sender, NetworkAvailabilityEventArgs e)
@@ -1781,11 +1873,15 @@ public partial class MainWindow : Window
         {
             if (e.Mode == PowerModes.Suspend)
             {
+                _scheduledTimer.Stop();
                 HandleExternalSafetyPause("电脑即将休眠；监测已暂停。若真实操作正在进行，下次必须先核对实际状态。", resetSession: true);
             }
             else if (e.Mode == PowerModes.Resume)
             {
                 HandleExternalSafetyPause("电脑已从休眠恢复；程序不会自动恢复监测，请重新验证会话。", resetSession: true);
+                _scheduledResumeScan = true;
+                _previousScheduledTick = null;
+                _scheduledTimer.Start();
             }
         });
     }
@@ -1817,27 +1913,19 @@ public partial class MainWindow : Window
 
         try
         {
-            using var bridge = await _loginWindow.CreateSessionBridgeAsync(cancellationToken);
-            var readClient = new ReadOnlyEamsClient(bridge);
-            var validation = await readClient.ValidateAsync(cancellationToken);
-            if (validation.StudentId != journal.StudentId
-                || validation.OpenTurns.All(turn => turn.Id != journal.TurnId))
+            var result = await EnqueueOnUiAsync(false, DateTimeOffset.Now, DateTimeOffset.Now, async token =>
             {
-                _realOperations.ProhibitAutomaticRecovery(
-                    "网络恢复后的账号或选课轮次与中断记录不一致；禁止自动恢复。");
-                SetStatus("账号或轮次不一致，旧课不会自动恢复。", StatusKind.Error);
-                AddActivity("中断换课的账号或轮次不一致；已禁止自动恢复。", "安全");
-                return;
-            }
-
-            ApplyRecoveredSession(validation, journal.TurnId);
-            var mutationClient = new ControlledEamsClient(bridge);
-            var result = await _realOperations.TryRestoreConfirmedDropsAfterNetworkAsync(
-                validation.StudentId,
-                journal.TurnId,
-                readClient,
-                mutationClient,
-                cancellationToken);
+                using var bridge = await _loginWindow.CreateSessionBridgeAsync(token);
+                var readClient = new ReadOnlyEamsClient(bridge);
+                var validation = await readClient.ValidateAsync(token);
+                if (validation.StudentId != journal.StudentId || validation.OpenTurns.All(turn => turn.Id != journal.TurnId))
+                    throw new InvalidOperationException("恢复账号或轮次不一致，禁止自动恢复。");
+                ApplyRecoveredSession(validation, journal.TurnId);
+                var mutationClient = new ControlledEamsClient(bridge);
+                _mutationEpoch++;
+                return await _realOperations.TryRestoreConfirmedDropsAfterNetworkAsync(
+                    validation.StudentId, journal.TurnId, readClient, mutationClient, token);
+            }, cancellationToken);
             switch (result.Outcome)
             {
                 case InterruptedRestoreOutcome.Restored:
@@ -1893,6 +1981,7 @@ public partial class MainWindow : Window
         _automationRunning = false;
         AutomationArmCheckBox.IsChecked = false;
         _validationCancellation?.Cancel();
+        InvalidateWriteSession();
         _realOperations.MarkExternalInterruption(message);
         if (resetSession)
         {
@@ -1908,11 +1997,19 @@ public partial class MainWindow : Window
 
     private void ControlledInput_Changed(object sender, RoutedEventArgs e)
     {
-        if (!_controlledUiReady)
+        if (!_controlledUiReady || _refreshingTurns)
         {
             return;
         }
 
+        if (ReferenceEquals(sender, TurnSelector))
+        {
+            InvalidateWriteSession();
+            CancelMonitoringWaiting();
+            _mutationEpoch++;
+            if (_monitoringContext is not null || _scheduledContext is not null)
+                PauseAutomation("当前轮次已变化，原监测已暂停。", "暂停");
+        }
         InvalidateControlledPrecheck("操作类型或教学班代码已变化，请重新执行只读预检查。");
     }
 
@@ -2081,6 +2178,7 @@ public partial class MainWindow : Window
         var cancellationToken = _validationCancellation.Token;
 
         SetBusy(true);
+        _manualWriteWaiting = true;
         ControlledConfirmCheckBox.IsChecked = false;
         ControlledResultText.Text = $"正在提交一次{actionName}并等待服务器结果…";
         var operationEventKind = mutationKind == CourseMutationKind.Add
@@ -2095,33 +2193,34 @@ public partial class MainWindow : Window
                 throw new InvalidOperationException("教务系统窗口尚未打开。");
             }
 
-            using var bridge = await _loginWindow.CreateSessionBridgeAsync(cancellationToken);
-            var readClient = new ReadOnlyEamsClient(bridge);
-            var mutationClient = new ControlledEamsClient(bridge);
-            using var operationLease = await _realOperations.EnterAsync(
-                "单门受控操作",
-                readClient,
-                mutationClient,
-                cancellationToken);
-            operationLease.BeginWorkflow(
-                "单门受控操作",
-                session.StudentId,
-                turn.Id,
-                lesson.Code,
-                []);
-            var verified = await operationLease.ExecuteAndVerifyAsync(
-                mutationKind,
-                lesson,
-                $"单门{actionName} {lesson.Code}",
-                cancellationToken);
-            if (verified.ExpectedStateReached)
+            var verified = await EnqueueOnUiAsync(false, DateTimeOffset.Now, DateTimeOffset.Now, async token =>
             {
-                operationLease.CompleteWorkflow("单门操作最终状态已读取且与计划一致，预检查已消费。");
-            }
-            else
-            {
-                operationLease.RequireManualReview("单门操作最终状态与计划不一致；不得重复提交，必须先读取实际状态并人工核对。");
-            }
+                using var safety = CancellationTokenSource.CreateLinkedTokenSource(token, _sessionWritesCancellation.Token);
+                token = safety.Token;
+                if (_updateInstalling || _updateHandshakePending) throw new InvalidOperationException("正在安装更新，禁止开始真实操作。");
+                using var bridge = await _loginWindow.CreateSessionBridgeAsync(token);
+                var readClient = new ReadOnlyEamsClient(bridge);
+                var validation = await readClient.ValidateAsync(token);
+                if (validation.StudentId != session.StudentId || validation.OpenTurns.All(item => item.Id != turn.Id))
+                    throw new InvalidOperationException("账号或轮次发生变化，请重新预检查。");
+                var snapshot = await readClient.GetShadowSnapshotAsync(session.StudentId, turn.Id, [lesson.Code], token);
+                token.ThrowIfCancellationRequested();
+                var matches = snapshot.TargetLessons.Where(item => item.Code.Equals(lesson.Code, StringComparison.OrdinalIgnoreCase)).ToArray();
+                if (matches.Length != 1 || matches[0].Id != lesson.Id)
+                    throw new InvalidOperationException("教学班信息发生变化，请重新预检查。");
+                var selected = snapshot.SelectedLessons.Any(item => item.Id == lesson.Id);
+                if (selected == (mutationKind == CourseMutationKind.Add))
+                    throw new InvalidOperationException("课程已处于目标状态，未提交操作。");
+                var mutationClient = new ControlledEamsClient(bridge);
+                using var operationLease = await _realOperations.EnterAsync("单门受控操作", readClient, mutationClient, token);
+                _mutationEpoch++;
+                operationLease.BeginWorkflow("单门受控操作", session.StudentId, turn.Id, lesson.Code, []);
+                var result = await operationLease.ExecuteAndVerifyAsync(mutationKind, matches[0], $"单门{actionName} {lesson.Code}", token);
+                if (result.ExpectedStateReached) operationLease.CompleteWorkflow("单门操作最终状态已确认。");
+                else operationLease.RequireManualReview("单门操作最终状态与计划不一致，请人工核对。");
+                _mutationEpoch++;
+                return result;
+            }, cancellationToken);
 
             ControlledResultText.Text =
                 $"服务器与复核信息：{verified.Message}{Environment.NewLine}" +
@@ -2166,6 +2265,7 @@ public partial class MainWindow : Window
             _controlledLesson = null;
             RefreshInterruptedOperationBanner();
             SetBusy(false);
+            _manualWriteWaiting = false;
             UpdateControlledExecuteState();
         }
     }
@@ -2458,12 +2558,13 @@ public partial class MainWindow : Window
     private void SetBusy(bool isBusy)
     {
         _isBusy = isBusy;
+        isBusy |= _realOperations.IsOperationInProgress || _updateInstalling;
         OpenEamsButton.IsEnabled = !isBusy;
-        ValidateButton.IsEnabled = !isBusy && !_automationRunning && _loginWindow?.IsBrowserReady == true;
-        LogoutButton.IsEnabled = !isBusy && !_automationRunning && _loginWindow?.IsBrowserReady == true;
+        ValidateButton.IsEnabled = !isBusy && !_automationRunning && !_scheduledRunning && _loginWindow?.IsBrowserReady == true;
+        LogoutButton.IsEnabled = !isBusy && !_automationRunning && !_scheduledRunning && _loginWindow?.IsBrowserReady == true;
         ReadCoursesButton.IsEnabled = !isBusy && !_automationRunning && _loginWindow?.IsBrowserReady == true;
         ControlledPrecheckButton.IsEnabled = !isBusy && !_automationRunning && _loginWindow?.IsBrowserReady == true;
-        TurnSelector.IsEnabled = !isBusy && !_automationRunning;
+        TurnSelector.IsEnabled = !isBusy && !_automationRunning && !_scheduledRunning;
         ControlledActionSelector.IsEnabled = !isBusy && !_automationRunning;
         ControlledLessonCodeText.IsEnabled = !isBusy && !_automationRunning;
         BusyIndicator.Visibility = isBusy ? Visibility.Visible : Visibility.Collapsed;
@@ -2471,6 +2572,7 @@ public partial class MainWindow : Window
         UpdateAutomationControls();
         UpdateAccountSecurityControls();
         RefreshInterruptedOperationBanner();
+        UpdateScheduledControls();
     }
 
     private void UpdateAutomationControls()
@@ -2482,12 +2584,13 @@ public partial class MainWindow : Window
                                           && !_realOperations.HasUnresolvedOperation
                                           && !_realOperations.IsOperationInProgress;
         CheckAutomationNowButton.IsEnabled = !_isBusy && !_automationRunning && browserReady;
-        PauseAutomationButton.IsEnabled = !_isBusy && _automationRunning;
-        AutomationTasksGrid.IsEnabled = !_isBusy && !_automationRunning;
-        AddAutomationTaskButton.IsEnabled = !_isBusy && !_automationRunning;
-        DeleteAutomationTaskButton.IsEnabled = !_isBusy && !_automationRunning;
-        MoveAutomationTaskUpButton.IsEnabled = !_isBusy && !_automationRunning;
-        MoveAutomationTaskDownButton.IsEnabled = !_isBusy && !_automationRunning;
+        PauseAutomationButton.IsEnabled = _automationRunning;
+        var tasksEditable = !_isBusy && !_automationRunning && !_automationCycleActive && !_realOperations.IsOperationInProgress;
+        AutomationTasksGrid.IsEnabled = tasksEditable;
+        AddAutomationTaskButton.IsEnabled = tasksEditable;
+        DeleteAutomationTaskButton.IsEnabled = tasksEditable;
+        MoveAutomationTaskUpButton.IsEnabled = tasksEditable;
+        MoveAutomationTaskDownButton.IsEnabled = tasksEditable;
         AutomationIntervalSelector.IsEnabled = !_isBusy && !_automationRunning;
         AutomationCustomIntervalText.IsEnabled = !_isBusy && !_automationRunning;
         AutomationIntervalJitterCheckBox.IsEnabled = !_isBusy && !_automationRunning;
@@ -2496,6 +2599,16 @@ public partial class MainWindow : Window
         AutomationEndTimeText.IsEnabled = !_isBusy && !_automationRunning;
         RunAtStartupCheckBox.IsEnabled = !_isBusy && !_automationRunning;
         AutomationArmCheckBox.IsEnabled = !_isBusy;
+        if (_updateInstalling || _updateHandshakePending)
+        {
+            StartAutomationButton.IsEnabled = false;
+            CheckAutomationNowButton.IsEnabled = false;
+        }
+        if (_scheduledRunning || _automationCycleActive)
+        {
+            StartAutomationButton.IsEnabled = false;
+            CheckAutomationNowButton.IsEnabled = false;
+        }
     }
 
     private void SetStatus(string message, StatusKind kind)
@@ -2517,6 +2630,9 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closed(object? sender, EventArgs e)
     {
+        _scheduledTimer.Stop();
+        _lifetimeCancellation.Cancel();
+        _updateCancellation.Cancel();
         _automationTimer.Stop();
         _automationTaskSaveTimer.Stop();
         ClearAutomationTimerPlan();
@@ -2540,7 +2656,7 @@ public partial class MainWindow : Window
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)
     {
-        if (_automationCycleActive || _realOperations.IsOperationInProgress)
+        if (_scheduledRunning || _manualWriteWaiting || _realOperations.IsOperationInProgress)
         {
             e.Cancel = true;
             SetStatus("当前真实操作尚未完成；为避免结果不确定，暂时不能关闭程序。", StatusKind.Error);
@@ -2548,11 +2664,14 @@ public partial class MainWindow : Window
             return;
         }
 
-        if (_automationRunning)
+        var pending = _scheduledService?.Current;
+        var hasPending = pending?.State is ScheduledSelectionState.Armed or ScheduledSelectionState.Queued;
+        if (!_updateInstalling && (_automationRunning || hasPending))
         {
             var confirmation = MessageBox.Show(
                 this,
-                "任务监测仍在运行。关闭程序会停止后续监测，是否确认关闭？",
+                "关闭程序会停止监测，关闭后无法准时执行预约。错过时间的处理按照预约设置。" +
+                (hasPending ? $"\n预约时间：{pending!.ExecuteAt:yyyy-MM-dd HH:mm:ss}" : string.Empty),
                 "确认停止监测并关闭",
                 MessageBoxButton.YesNo,
                 MessageBoxImage.Warning,
@@ -2573,7 +2692,22 @@ public partial class MainWindow : Window
         _automationTimer.Stop();
         ClearAutomationTimerPlan();
         _automationRunning = false;
-        SaveAutomationSettings();
+        _monitoringContext = null;
+        _mutationEpoch++;
+        _scheduledTimer.Stop();
+        CancelMonitoringWaiting();
+        try
+        {
+            _scheduledService?.RestoreQueuedToArmed();
+            if (!SaveAutomationBeforeExecution()) { e.Cancel = true; return; }
+            _scheduledCancellation?.Cancel();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            e.Cancel = true;
+            SetStatus("配置保存失败，关闭已停止：" + ex.Message, StatusKind.Error);
+            _scheduledTimer.Start();
+        }
     }
 
     private enum StatusKind
