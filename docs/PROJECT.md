@@ -174,6 +174,8 @@ dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks -c Release --
 
 发布说明仅取自 [CHANGELOG](CHANGELOG.md)中对应版本的唯一表格行，由 Python 3 和固定版本的 `markdown-it-py` 解析；缺失、重复或空内容均失败，不混入其他版本说明。安装依赖并单独生成说明：
 
+Release 工作流显式设置 `PYTHONUTF8=1` 和 `PYTHONIOENCODING=utf-8`，确保 Windows runner 的 Python 文件默认编码及标准输出使用 UTF-8，避免中文发布日志在 cp1252 控制台编码下中断流程。
+
 ```powershell
 python -m pip install -r tools/release/requirements.txt
 python tools/release/release_notes.py --tag v2.2.1 --output artifacts/release-notes.md

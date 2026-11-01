@@ -15,6 +15,9 @@ jobs:
   release:
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
     steps:
       - name: Check out tagged source
         uses: actions/checkout@v6
