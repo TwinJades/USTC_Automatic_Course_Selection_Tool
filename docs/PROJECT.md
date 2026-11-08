@@ -21,12 +21,12 @@ Windows 和 HTTP Linux 3.0.0 目录包已生成并通过清单、二进制版本
 
 | 包（均位于 `artifacts/`） | 字节数 | ZIP 条目 | SHA256 |
 | --- | ---: | ---: | --- |
-| `candidate-3.0.0-win/USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` | 63,063,719 | 406 | `b552d3f4eea1a848a8e3abee6c31071c0ce399ea24a9f8d832cf1c17a48f12cc` |
-| `candidate-3.0.0-linux/USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip` | 35,027,722 | 194 | `a843c2026677c45f5451e34bb91546f93751b0b684f8d3ffd8745812b682fde2` |
+| `candidate-3.0.0-win-final/USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` | 63,063,641 | 406 | `9ffcdaf4c305aa225baaa59d30d2d948af0159dc13deefe4f21c557a6eec23a2` |
+| `candidate-3.0.0-linux-final/USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip` | 35,027,645 | 194 | `1d30370d62a0765da10698d7f8aeac69eae7a56db569f82dbf5875d75fe503b3` |
 
-Linux 包的 launcher 和 CLI 设置 Unix `100755`；包中没有 Node、Chromium、Playwright 或独立更新器。HTTP 认证使用内存 Cookie，会话不持久保存。两平台 `app/UstcCourseAssistant.Core.dll` 摘要均为 `251c96a31e82c39e097f402ed077aaa1682542f2bcf837aa679043a2f7c536cc`。
+Linux 包的 launcher 和 CLI 设置 Unix `100755`；包中没有 Node、Chromium、Playwright 或独立更新器。HTTP 认证使用内存 Cookie，会话不持久保存。两平台 `app/UstcCourseAssistant.Core.dll` 摘要均为 `3711b168e0f8c346be6cb8bf3109aef99f80ed214f02784a8904d8c4f5545bbe`。
 
-3.0.0 Windows 包解压到隔离数据目录后以最小化方式实际启动，主窗口正常出现并可正常关闭；本次未重新打开 WebView2 登录页，也未输入或提交凭据。该检查不同于开发输出的完整界面检查。
+3.0.0 Windows 包解压到隔离数据目录后以最小化方式实际启动，主窗口正常出现并可正常关闭；本次未重新打开 WebView2 登录页，也未输入或提交凭据。该检查不同于开发输出的完整界面检查。打包后在调度层补充了预约上下文不匹配的前置阻断，避免每 250 毫秒重复发起只读教务请求；CoreChecks 与 EngineChecks 已重跑通过。
 
 ## Windows 使用与迁移
 
