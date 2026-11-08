@@ -64,7 +64,7 @@ if (Test-Path -LiteralPath $destination) {
 }
 Copy-Item -LiteralPath $archive -Destination $destination
 foreach ($stale in Get-ChildItem -LiteralPath $release -Filter 'USTC_Automatic_Course_Selection_Tool_*.zip' -File) {
-    if ($stale.FullName -eq $destination) { continue }
+    if ($stale.Name -like "USTC_Automatic_Course_Selection_Tool_${version}_*.zip") { continue }
     if ($hostWindows) {
         Add-Type -AssemblyName Microsoft.VisualBasic
         [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($stale.FullName, 'OnlyErrorDialogs', 'SendToRecycleBin')
