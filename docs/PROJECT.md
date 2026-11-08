@@ -13,20 +13,20 @@ ZIP 自包含运行库，根目录包括 `app/`、空的 `data/`、`package-mani
 
 **验证边界：**东京 Ubuntu 26.04 VPS 已用真实账号完成一次 HTTP 登录：密码提交 → 短信登录页 → 按账号绑定的图形码 → 短信码 → 只读身份核验返回本人学号；当时选课轮次未开放，未执行任何选退课。systemd 安装、专用 UID、Unix socket 控制、服务重启、CLI 复用维护模式同版本目录替换，以及下载中断和旧 app 已移走的自动恢复也已实测。VPS 现运行 3.0.0 目录包，升级后内存登录按预期失效，当前未登录且无任务或监测授权。系统加密凭据、不同版本在线更新和 2 核 2 GB 性能未验收。
 
-本地验证已观察：解决方案 Release 构建成功（0 警告、0 错误）；CoreChecks（含预约监测上下文边界回归）、完整 WPF 界面与 EngineChecks 通过。HTTP 认证检查覆盖 AES 表单、风控令牌缺失拒绝、身份核验、密码及短信验证码人工重试、退出挑战失效、307/308 凭据重放和跨域拒绝；模拟响应不访问学校。控制器、IPC 和迁移检查，以及跨进程启动身份一致性检查通过。
+本地验证已观察：使用 .NET 10 SDK 的解决方案 Release 构建成功（0 警告、0 错误）；CoreChecks（含预约监测上下文边界回归）、完整 WPF 界面与 EngineChecks 通过。HTTP 认证检查覆盖 AES 表单、风控令牌缺失拒绝、身份核验、密码及短信验证码人工重试、退出挑战失效、307/308 凭据重放和跨域拒绝；模拟响应不访问学校。控制器、IPC 和迁移检查，以及跨进程启动身份一致性检查通过。
 
 Windows 本地完整进程更新 smoke 已按 3.0.0 → 3.0.1 通过：复用真实桌面 EXE 的辅助模式，真实根启动器在包含单引号的路径运行，覆盖 Downloading 无 helper、缺失 journal、旧程序或新程序已放置、ready 前及 Committed 后恢复，以及 A→B 提交、数据哨兵不变和活动目录回收。此结果不代表真实 GUI 在线 GitHub 更新或 Linux 实机在线更新通过。
 
-Windows 和 HTTP Linux 3.0.0 目录包已生成并通过清单、二进制版本（入口、Core、CLI 均为 3.0.0.0）和文件摘要校验，`data/` 为空，两平台 Core 摘要一致。旧 `deliverables-*` 已移入回收站；以下包尚未在线发布：
+Windows 和 HTTP Linux 3.0.0 目录包基于 .NET 10 LTS 自包含运行时（10.0.14），已通过清单、二进制版本（入口、Core、CLI 均为 3.0.0.0）和文件摘要校验，`data/` 为空，两平台 Core 摘要一致。旧 `deliverables-*` 已移入回收站；以下包尚未在线发布：
 
 | 包（均位于 `artifacts/`） | 字节数 | ZIP 条目 | SHA256 |
 | --- | ---: | ---: | --- |
-| `candidate-3.0.0-win-final/USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` | 63,063,641 | 406 | `9ffcdaf4c305aa225baaa59d30d2d948af0159dc13deefe4f21c557a6eec23a2` |
-| `candidate-3.0.0-linux-final/USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip` | 35,027,645 | 194 | `1d30370d62a0765da10698d7f8aeac69eae7a56db569f82dbf5875d75fe503b3` |
+| `candidate-3.0.0-win-net10/USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` | 64,980,311 | 412 | `98e891db0fb7b70917e73dcf3d1c0f151255b07179047c58c917b045aab0390c` |
+| `candidate-3.0.0-linux-net10/USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip` | 36,139,662 | 197 | `8b594fa8403968c317f7a2e96c6994ede1386d98d9a1765fcf061a5d5a145d92` |
 
-Linux 包的 launcher 和 CLI 设置 Unix `100755`；包中没有 Node、Chromium、Playwright 或独立更新器。HTTP 认证使用内存 Cookie，会话不持久保存。两平台 `app/UstcCourseAssistant.Core.dll` 摘要均为 `3711b168e0f8c346be6cb8bf3109aef99f80ed214f02784a8904d8c4f5545bbe`。
+Linux 包的 launcher 和 CLI 设置 Unix `100755`；包中没有 Node、Chromium、Playwright 或独立更新器。HTTP 认证使用内存 Cookie，会话不持久保存。两平台 `app/UstcCourseAssistant.Core.dll` 摘要均为 `8b953fb7841e8d11ca4af44b3646e7e025c713e57bd83a0e2daeeaeab0badf23`，包内运行时为 Microsoft.NETCore.App 10.0.14。
 
-3.0.0 Windows 包解压到隔离数据目录后以最小化方式实际启动，主窗口正常出现并可正常关闭；本次未重新打开 WebView2 登录页，也未输入或提交凭据。该检查不同于开发输出的完整界面检查。打包后在调度层补充了预约上下文不匹配的前置阻断，避免每 250 毫秒重复发起只读教务请求；CoreChecks 与 EngineChecks 已重跑通过。
+3.0.0 Windows 包解压到隔离数据目录后以最小化方式实际启动，主窗口正常出现并可正常关闭；本次未重新打开 WebView2 登录页，也未输入或提交凭据。该检查不同于开发输出的完整界面检查。迁移 .NET 10 后 CoreChecks、EngineChecks 与 3.0.0 → 3.0.1 更新 smoke 均已重跑通过。
 
 ## Windows 使用与迁移
 
@@ -121,7 +121,7 @@ Windows 删除进入系统回收站；Linux 服务数据的应用回收区位于
 
 [解决方案](../UstcCourseAssistant.sln)包含路线一 WPF、路线二 WPF、跨平台 Core 和 CLI；路线一不迁移用户资料。桌面使用 WebView2，Linux CLI 使用 Core 的 `HttpAuthenticationService`。Core 不依赖 Playwright，包含 HTTP 认证与课程客户端、监测预约、安全事务、状态持久化、北京时间、包路径及更新服务。更新复用桌面 EXE 或 Linux CLI 的辅助模式，不额外发布更新器工程或重复运行库。版本元数据仍在路线二项目配置中。
 
-需要 .NET 9 SDK；Windows 桌面编译与界面检查还需 Windows 和 WebView2 Runtime。仓库根目录可运行：
+需要 .NET 10 SDK；Windows 桌面编译与界面检查还需 Windows 和 WebView2 Runtime。仓库根目录可运行：
 
 ```powershell
 dotnet restore UstcCourseAssistant.sln

@@ -21,7 +21,7 @@ jobs:
       - name: Set up .NET
         uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: 10.0.x
 
       - name: Restore
         run: dotnet restore UstcCourseAssistant.sln
@@ -42,7 +42,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: actions/setup-dotnet@v5
         with:
-          dotnet-version: 9.0.x
+          dotnet-version: 10.0.x
       - name: Build Linux CLI
         run: dotnet build src/UstcCourseAssistant.Cli --configuration Release
       - name: Run shared-core checks
