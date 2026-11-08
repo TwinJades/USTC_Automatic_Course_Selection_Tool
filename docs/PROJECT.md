@@ -17,12 +17,12 @@ ZIP 自包含运行库，根目录包括 `app/`、空的 `data/`、`package-mani
 
 Windows 本地完整进程更新 smoke 已按 3.0.0 → 3.0.1 通过：复用真实桌面 EXE 的辅助模式，真实根启动器在包含单引号的路径运行，覆盖 Downloading 无 helper、缺失 journal、旧程序或新程序已放置、ready 前及 Committed 后恢复，以及 A→B 提交、数据哨兵不变和活动目录回收。此结果不代表真实 GUI 在线 GitHub 更新或 Linux 实机在线更新通过。
 
-Windows 和 HTTP Linux 3.0.0 目录包基于 .NET 10 LTS 自包含运行时（10.0.14），已通过清单、二进制版本（入口、Core、CLI 均为 3.0.0.0）和文件摘要校验，`data/` 为空，两平台 Core 摘要一致。GitHub Release `v3.0.0` 已发布由工作流重新构建的两个附件，摘要与下表本地候选略有差异，功能与源码一致；旧 `deliverables-*` 已移入回收站。本地候选如下：
+Windows 和 HTTP Linux 3.0.0 目录包基于 .NET 10 LTS 自包含运行时（10.0.14），已通过清单、二进制版本（入口、Core、CLI 均为 3.0.0.0）和文件摘要校验，`data/` 为空，两平台 Core 摘要一致。GitHub Release `v3.0.0` 已发布由工作流重新构建的两个附件，摘要与下表本地包略有差异，功能与源码一致。本机最终 ZIP 位于被忽略的 `release/`；`artifacts/` 只保留可随时重建的打包缓存：
 
-| 包（均位于 `artifacts/`） | 字节数 | ZIP 条目 | SHA256 |
+| 本机最终包（`release/`） | 字节数 | ZIP 条目 | SHA256 |
 | --- | ---: | ---: | --- |
-| `candidate-3.0.0-win-net10/USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` | 64,980,311 | 412 | `98e891db0fb7b70917e73dcf3d1c0f151255b07179047c58c917b045aab0390c` |
-| `candidate-3.0.0-linux-net10/USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip` | 36,139,662 | 197 | `8b594fa8403968c317f7a2e96c6994ede1386d98d9a1765fcf061a5d5a145d92` |
+| `USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` | 64,980,311 | 412 | `98e891db0fb7b70917e73dcf3d1c0f151255b07179047c58c917b045aab0390c` |
+| `USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip` | 36,139,662 | 197 | `8b594fa8403968c317f7a2e96c6994ede1386d98d9a1765fcf061a5d5a145d92` |
 
 Linux 包的 launcher 和 CLI 设置 Unix `100755`；包中没有 Node、Chromium、Playwright 或独立更新器。HTTP 认证使用内存 Cookie，会话不持久保存。两平台 `app/UstcCourseAssistant.Core.dll` 摘要均为 `8b953fb7841e8d11ca4af44b3646e7e025c713e57bd83a0e2daeeaeab0badf23`，包内运行时为 Microsoft.NETCore.App 10.0.14。
 
