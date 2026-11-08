@@ -51,4 +51,13 @@ if ($Runtime -eq 'win-x64') {
 if ($LASTEXITCODE -ne 0) { throw 'Package creation failed.' }
 & python tools/release/verify_archive.py --tag $Tag --runtime $Runtime --archive $archive
 if ($LASTEXITCODE -ne 0) { throw 'Package verification failed.' }
+$release = Join-Path $workspace 'release'
+New-Item -ItemType Directory -Path $release -Force | Out-Null
+$destination = Join-Path $release (Split-Path $archive -Leaf)
+if (Test-Path -LiteralPath $destination) {
+    Add-Type -AssemblyName Microsoft.VisualBasic
+    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($destination, 'OnlyErrorDialogs', 'SendToRecycleBin')
+}
+Copy-Item -LiteralPath $archive -Destination $destination
+Write-Output "Release archive: $destination"
 Write-Output "Candidate archive: $archive"

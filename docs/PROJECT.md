@@ -134,7 +134,7 @@ dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks -c Release --
 
 ## 发布
 
-[Release 工作流](../.github/workflows/release.yml)配置了 Windows/Linux 两平台目录包构建、校验和草稿 Release 汇总；工作流存在不等于已经运行或发布。标签须与路线二项目版本元数据及 [CHANGELOG](CHANGELOG.md) 对应版本行一致。候选输出目录必须位于 `artifacts/`，同名候选已存在时选择新目录；本地打包不会创建标签、推送或发布：
+[Release 工作流](../.github/workflows/release.yml)配置了 Windows/Linux 两平台目录包构建、校验和草稿 Release 汇总；工作流存在不等于已经运行或发布。标签须与路线二项目版本元数据及 [CHANGELOG](CHANGELOG.md) 对应版本行一致。候选输出目录必须位于 `artifacts/`，同名候选已存在时选择新目录；打包成功后同一 ZIP 会复制到仓库根的被忽略目录 `release/`，作为本机最终产物。本地打包不会创建标签、推送或发布：
 
 ```powershell
 python -m pip install -r tools/release/requirements.txt
@@ -146,6 +146,8 @@ python tools/release/verify_archive.py --tag v3.0.0 --runtime linux-x64 --archiv
 ```
 
 发布脚本按平台组装：Windows 只发布桌面及其运行依赖，Linux 发布 CLI；两端均不包含 Playwright、Chromium 或独立更新器。清单覆盖包文件，验证平台、版本与文件摘要。应用更新还要求 GitHub Release 附件摘要匹配，不能仅凭同包清单信任来源。现有线上 2.2.1 是旧格式，首次切换目录包必须手动解压，不用旧版应用内更新器切换。启动器协议变化时也须手动解压新候选，不覆盖旧目录。项目不使用 GitHub Pages。
+
+`release/` 只保存当前版本的最终双平台 ZIP；同名文件更新时旧文件移入回收站。GitHub Release 附件由工作流在云端重新构建，因此与本地 `release/` 中的 ZIP 摘要可能略有差异，功能一致。
 
 ## 文档入口
 
