@@ -4,7 +4,7 @@
 
 USTC 选课助手是面向中国科学技术大学综合教务系统的非官方工具，采用 [MIT License](../LICENSE)，与学校无隶属、合作或授权关系。程序不提供云账户或公网管理接口；读取及真实选退依赖学校接口，最终结果须本人到教务系统核对。换课、退课后的恢复均不保证成功。
 
-线上正式 2.2.1 是 Windows x64 单 EXE ZIP。源码版本为 `3.0.0`，Windows 和 Linux 目录包随源码交付，尚未作为 GitHub Release 附件发布；不得覆盖已有线上 2.2.1 附件。目录包命名为：
+线上同时保留 2.2.1 的 Windows x64 单 EXE ZIP。源码版本为 `3.0.0`，Windows 和 Linux 双目录包已作为 GitHub Release `v3.0.0` 正式发布；不得覆盖历史 2.2.1 附件。目录包命名为：
 
 - `USTC_Automatic_Course_Selection_Tool_<版本号>_win-x64.zip`
 - `USTC_Automatic_Course_Selection_Tool_<版本号>_linux-x64.zip`
