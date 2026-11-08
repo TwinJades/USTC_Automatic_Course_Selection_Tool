@@ -6,7 +6,7 @@
 
 ## 📥 下载与运行
 
-[GitHub Releases](https://github.com/TwinJades/USTC_Automatic_Course_Selection_Tool/releases) 的正式 **2.2.1** 仍是 Windows x64 单 EXE ZIP；3.0.0 双目录包目前只随源码提供，**尚未发布为 GitHub Release 附件**。不要用新包直接覆盖线上 2.2.1 的下载。
+[GitHub Releases](https://github.com/TwinJades/USTC_Automatic_Course_Selection_Tool/releases) 已发布 **3.0.0**：Windows 与 Linux 双目录包，基于 .NET 10 LTS 自包含运行时。此前正式版 2.2.1 仍是 Windows x64 单 EXE ZIP；新包不要直接覆盖旧版下载目录。
 
 3.0.0 目录包分别为 `USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` 和 `USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip`，自包含运行库，解压后保留完整目录。Windows 从包根 `USTC选课助手.cmd` 启动，需要 Windows 10/11 x64 和 WebView2 Runtime；Linux 面向 x86_64、glibc、systemd 250 或更高版本，使用包根 `ustc-assistant`，需要 ICU 等 .NET 系统运行依赖。两端需要访问学校网络。
 目录包不携带 Playwright、Chromium、Node 或独立更新器。Windows 使用系统 WebView2 Runtime 登录；Linux 使用 HTTP 登录、人工短信和图形验证码交互，不需要桌面或浏览器系统库。更新分别复用桌面主程序和 CLI 的辅助模式。

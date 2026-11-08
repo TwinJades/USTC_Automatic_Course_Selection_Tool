@@ -352,9 +352,9 @@ sudo ./ustc-assistant credentials delete
 sudo ./ustc-assistant update check
 ```
 
-目前 GitHub 正式版本仍是旧 Windows 2.2.1 包，3.0.0 尚未作为 Release 附件上传；检查可能没有可用的 Linux 附件。**现在不用为了更新而执行安装命令。**
+GitHub 已发布 3.0.0 的 Linux 目录包附件，`update check` 可以看到；但不同版本在线更新的完整流程仍未验收，建议按上文手动换包，并在新版本启动后核对服务状态。
 
-未来有匹配的正式 Linux 目录包后，才使用：
+确认附件版本与当前安装无误后，才使用：
 
 ```sh
 sudo ./ustc-assistant update apply --confirm

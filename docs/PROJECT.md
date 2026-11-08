@@ -17,7 +17,7 @@ ZIP 自包含运行库，根目录包括 `app/`、空的 `data/`、`package-mani
 
 Windows 本地完整进程更新 smoke 已按 3.0.0 → 3.0.1 通过：复用真实桌面 EXE 的辅助模式，真实根启动器在包含单引号的路径运行，覆盖 Downloading 无 helper、缺失 journal、旧程序或新程序已放置、ready 前及 Committed 后恢复，以及 A→B 提交、数据哨兵不变和活动目录回收。此结果不代表真实 GUI 在线 GitHub 更新或 Linux 实机在线更新通过。
 
-Windows 和 HTTP Linux 3.0.0 目录包基于 .NET 10 LTS 自包含运行时（10.0.14），已通过清单、二进制版本（入口、Core、CLI 均为 3.0.0.0）和文件摘要校验，`data/` 为空，两平台 Core 摘要一致。旧 `deliverables-*` 已移入回收站；以下包尚未在线发布：
+Windows 和 HTTP Linux 3.0.0 目录包基于 .NET 10 LTS 自包含运行时（10.0.14），已通过清单、二进制版本（入口、Core、CLI 均为 3.0.0.0）和文件摘要校验，`data/` 为空，两平台 Core 摘要一致。GitHub Release `v3.0.0` 已发布由工作流重新构建的两个附件，摘要与下表本地候选略有差异，功能与源码一致；旧 `deliverables-*` 已移入回收站。本地候选如下：
 
 | 包（均位于 `artifacts/`） | 字节数 | ZIP 条目 | SHA256 |
 | --- | ---: | ---: | --- |
