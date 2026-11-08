@@ -4,35 +4,33 @@
 
 USTC 选课助手是面向中国科学技术大学综合教务系统的非官方工具，采用 [MIT License](../LICENSE)，与学校无隶属、合作或授权关系。程序不提供云账户或公网管理接口；读取及真实选退依赖学校接口，最终结果须本人到教务系统核对。换课、退课后的恢复均不保证成功。
 
-线上正式 2.2.1 是 Windows x64 单 EXE ZIP。当前源码版本仍为 `2.2.1`，本页描述的 Windows 和 Linux 目录包是**未正式发布的源码候选**，不是线上 2.2.1 附件；不得覆盖已有线上版本或把候选视作已发布。候选命名为：
+线上正式 2.2.1 是 Windows x64 单 EXE ZIP。源码版本为 `3.0.0`，Windows 和 Linux 目录包随源码交付，尚未作为 GitHub Release 附件发布；不得覆盖已有线上 2.2.1 附件。目录包命名为：
 
 - `USTC_Automatic_Course_Selection_Tool_<版本号>_win-x64.zip`
 - `USTC_Automatic_Course_Selection_Tool_<版本号>_linux-x64.zip`
 
 ZIP 自包含运行库，根目录包括 `app/`、空的 `data/`、`package-manifest.json` 和对应平台的稳定启动器；Linux 另有 `service/`。运行时保留整个目录，不是将单个 EXE 抽出来使用。
 
-**验证边界：**东京 Ubuntu 26.04 VPS 已用真实账号完成一次 HTTP 登录：密码提交 → 短信登录页 → 按账号绑定的图形码 → 短信码 → 只读身份核验返回本人学号；当时选课轮次未开放，未执行任何选退课。systemd 安装、专用 UID、Unix socket 控制、服务重启、CLI 复用维护模式同版本目录替换，以及下载中断和旧 app 已移走的自动恢复也已实测。系统加密凭据、不同版本在线更新和 2 核 2 GB 性能未验收。
+**验证边界：**东京 Ubuntu 26.04 VPS 已用真实账号完成一次 HTTP 登录：密码提交 → 短信登录页 → 按账号绑定的图形码 → 短信码 → 只读身份核验返回本人学号；当时选课轮次未开放，未执行任何选退课。systemd 安装、专用 UID、Unix socket 控制、服务重启、CLI 复用维护模式同版本目录替换，以及下载中断和旧 app 已移走的自动恢复也已实测。VPS 现运行 3.0.0 目录包，升级后内存登录按预期失效，当前未登录且无任务或监测授权。系统加密凭据、不同版本在线更新和 2 核 2 GB 性能未验收。
 
-本地候选验证已观察：解决方案 Release 构建成功（0 警告、0 错误）；CoreChecks、完整 WPF 界面与 EngineChecks 通过。HTTP 认证检查覆盖 AES 表单、风控令牌缺失拒绝、身份核验、密码及短信验证码人工重试、退出挑战失效、307/308 凭据重放和跨域拒绝；模拟响应不访问学校，不等同真实账号验收。控制器、IPC 和迁移检查，以及跨进程启动身份一致性检查通过。
+本地验证已观察：解决方案 Release 构建成功（0 警告、0 错误）；CoreChecks（含预约监测上下文边界回归）、完整 WPF 界面与 EngineChecks 通过。HTTP 认证检查覆盖 AES 表单、风控令牌缺失拒绝、身份核验、密码及短信验证码人工重试、退出挑战失效、307/308 凭据重放和跨域拒绝；模拟响应不访问学校。控制器、IPC 和迁移检查，以及跨进程启动身份一致性检查通过。
 
-精简 Windows 本地完整进程更新 smoke 已通过：复用真实桌面 EXE 的辅助模式，真实根启动器在包含单引号的路径运行，覆盖 Downloading 无 helper、缺失 journal、旧程序或新程序已放置、ready 前及 Committed 后恢复，以及 A→B 提交、数据哨兵不变和活动目录回收。此结果不代表真实 GUI 在线 GitHub 更新或 Linux 实机更新通过。
+Windows 本地完整进程更新 smoke 已按 3.0.0 → 3.0.1 通过：复用真实桌面 EXE 的辅助模式，真实根启动器在包含单引号的路径运行，覆盖 Downloading 无 helper、缺失 journal、旧程序或新程序已放置、ready 前及 Committed 后恢复，以及 A→B 提交、数据哨兵不变和活动目录回收。此结果不代表真实 GUI 在线 GitHub 更新或 Linux 实机在线更新通过。
 
-精简 Windows 和 HTTP Linux 本地候选已生成并通过清单、二进制版本和文件摘要校验，`data/` 为空。此前 `deliverables-*` 和中间 Linux 包不代表当前源码；以下均未在线发布：
+Windows 和 HTTP Linux 3.0.0 目录包已生成并通过清单、二进制版本（入口、Core、CLI 均为 3.0.0.0）和文件摘要校验，`data/` 为空，两平台 Core 摘要一致。旧 `deliverables-*` 已移入回收站；以下包尚未在线发布：
 
-| 候选包（均位于 `artifacts/`） | 字节数 | ZIP 条目 | SHA256 |
+| 包（均位于 `artifacts/`） | 字节数 | ZIP 条目 | SHA256 |
 | --- | ---: | ---: | --- |
-| `candidate-linux-final9/USTC_Automatic_Course_Selection_Tool_2.2.1_linux-x64.zip` | 35,027,449 | 194 | `f6848b28e200eab738764d184526bda467891919ba0fedf51a3c986ecbb439c6` |
-| `candidate-win-slim/USTC_Automatic_Course_Selection_Tool_2.2.1_win-x64.zip` | 62,978,454 | 405 | `54547ef37779a0b40e074e7e894c01e043432a07d1f8ef82c9cbcf4bf30d9b39` |
-| `deliverables-win/USTC_Automatic_Course_Selection_Tool_2.2.1_win-x64.zip` | 386,152,366 | 1,054 | `078ba52529a2e67ed96de566ae98184184100dae820d7c2bc473517f3682ca28` |
-| `deliverables-linux/USTC_Automatic_Course_Selection_Tool_2.2.1_linux-x64.zip` | 431,692,823 | 883 | `426ab9c632fe845e708ba44d905d13a61f73ad1dd46aa0628361c6e4f00216b4` |
+| `candidate-3.0.0-win/USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` | 63,063,719 | 406 | `b552d3f4eea1a848a8e3abee6c31071c0ce399ea24a9f8d832cf1c17a48f12cc` |
+| `candidate-3.0.0-linux/USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip` | 35,027,722 | 194 | `a843c2026677c45f5451e34bb91546f93751b0b684f8d3ffd8745812b682fde2` |
 
-Linux 包的 launcher 和 CLI 设置 Unix `100755`；包中没有 Node、Chromium 或独立更新器。HTTP 认证使用内存 Cookie，会话不持久保存。
+Linux 包的 launcher 和 CLI 设置 Unix `100755`；包中没有 Node、Chromium、Playwright 或独立更新器。HTTP 认证使用内存 Cookie，会话不持久保存。两平台 `app/UstcCourseAssistant.Core.dll` 摘要均为 `251c96a31e82c39e097f402ed077aaa1682542f2bcf837aa679043a2f7c536cc`。
 
-精简 Windows 候选解压到隔离验证目录后，实际打开主窗口及 WebView2 登录窗口，观察到学校教务登录首页正常显示，随后正常关闭主程序，未输入或提交凭据。该检查不同于开发输出的完整界面检查，也不证明真实登录成功。
+3.0.0 Windows 包解压到隔离数据目录后以最小化方式实际启动，主窗口正常出现并可正常关闭；本次未重新打开 WebView2 登录页，也未输入或提交凭据。该检查不同于开发输出的完整界面检查。
 
 ## Windows 使用与迁移
 
-需要 Windows 10/11 x64、WebView2 Runtime 和学校网络。关闭运行中的旧版，将候选 ZIP **手动解压到新的可写目录**，保留原 EXE，不覆盖线上附件或其下载目录。双击包根的 `USTC选课助手.cmd`，路径稳定，不依赖当前工作目录；需要程序持续运行并保持电脑清醒。
+需要 Windows 10/11 x64、WebView2 Runtime 和学校网络。关闭运行中的旧版，将 3.0.0 ZIP **手动解压到新的可写目录**，保留原 EXE，不覆盖线上附件或其下载目录。旧版应用内更新器不能跨格式升级。双击包根的 `USTC选课助手.cmd`，路径稳定，不依赖当前工作目录；需要程序持续运行并保持电脑清醒。
 
 首次启动在读取新配置前迁移 `%LOCALAPPDATA%/USTC Course Assistant Route2` 的偏好、任务、预约、操作记录、活动日志及其恢复副本到包内 `data/`。迁移会复制并核验，目标已有不同数据时中止而不覆盖；验证提交后才将旧目录移入 Windows 回收站。若旧目录占用或权限不足，会提示清理待完成并在之后启动时重试。路线一资料不迁移；旧浏览器资料和旧更新下载不复制。不要为迁移手工删除旧目录或未决操作证据。
 
@@ -76,7 +74,7 @@ sudo ./ustc-assistant auth screenshot
 sudo ./ustc-assistant auth submit-captcha
 ```
 
-`auth screenshot` 返回包内受权限保护的验证码图片文件路径，不需要浏览器截图。图片可能包含敏感挑战内容，勿公开分享；认证完成或退出后回收。图形验证码及短信的真实账号流程尚未验收。
+`auth screenshot` 返回包内受权限保护的验证码图片文件路径，不需要浏览器截图。图片可能包含敏感挑战内容，勿公开分享；认证完成或退出后回收。真实账号已完成一次完整登录与只读身份核验；其他短信/图形码分支与真实选退课仍未在线验收。
 
 查看全部实际命令与选项：`./ustc-assistant help`。以下示例中的轮次、教学班和任务 ID 必须换成本人只读核对得到的真实值；只有明确授权才会启动真实操作：
 
@@ -136,15 +134,15 @@ dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks -c Release --
 
 ## 发布
 
-[Release 工作流](../.github/workflows/release.yml)配置了 Windows/Linux 两平台候选构建、校验和草稿 Release 汇总；工作流存在不等于已经运行或发布。标签须与路线二项目版本元数据及 [CHANGELOG](CHANGELOG.md) 对应版本行一致。候选输出目录必须位于 `artifacts/`，同名候选已存在时选择新目录；本地打包不会创建标签、推送或发布：
+[Release 工作流](../.github/workflows/release.yml)配置了 Windows/Linux 两平台目录包构建、校验和草稿 Release 汇总；工作流存在不等于已经运行或发布。标签须与路线二项目版本元数据及 [CHANGELOG](CHANGELOG.md) 对应版本行一致。候选输出目录必须位于 `artifacts/`，同名候选已存在时选择新目录；本地打包不会创建标签、推送或发布：
 
 ```powershell
 python -m pip install -r tools/release/requirements.txt
-python tools/release/release_notes.py --tag v2.2.1 --output artifacts/release-notes.md
-./tools/release/Publish-Release.ps1 -Tag v2.2.1 -Runtime win-x64 -OutputDirectory artifacts/candidate-win
-./tools/release/Publish-Release.ps1 -Tag v2.2.1 -Runtime linux-x64 -OutputDirectory artifacts/candidate-linux
-python tools/release/verify_archive.py --tag v2.2.1 --runtime win-x64 --archive artifacts/candidate-win/USTC_Automatic_Course_Selection_Tool_2.2.1_win-x64.zip
-python tools/release/verify_archive.py --tag v2.2.1 --runtime linux-x64 --archive artifacts/candidate-linux/USTC_Automatic_Course_Selection_Tool_2.2.1_linux-x64.zip
+python tools/release/release_notes.py --tag v3.0.0 --output artifacts/release-notes.md
+./tools/release/Publish-Release.ps1 -Tag v3.0.0 -Runtime win-x64 -OutputDirectory artifacts/candidate-3.0.0-win
+./tools/release/Publish-Release.ps1 -Tag v3.0.0 -Runtime linux-x64 -OutputDirectory artifacts/candidate-3.0.0-linux
+python tools/release/verify_archive.py --tag v3.0.0 --runtime win-x64 --archive artifacts/candidate-3.0.0-win/USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip
+python tools/release/verify_archive.py --tag v3.0.0 --runtime linux-x64 --archive artifacts/candidate-3.0.0-linux/USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip
 ```
 
 发布脚本按平台组装：Windows 只发布桌面及其运行依赖，Linux 发布 CLI；两端均不包含 Playwright、Chromium 或独立更新器。清单覆盖包文件，验证平台、版本与文件摘要。应用更新还要求 GitHub Release 附件摘要匹配，不能仅凭同包清单信任来源。现有线上 2.2.1 是旧格式，首次切换目录包必须手动解压，不用旧版应用内更新器切换。启动器协议变化时也须手动解压新候选，不覆盖旧目录。项目不使用 GitHub Pages。

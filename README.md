@@ -6,16 +6,16 @@
 
 ## 📥 下载与运行
 
-[GitHub Releases](https://github.com/TwinJades/USTC_Automatic_Course_Selection_Tool/releases) 的正式 **2.2.1** 仍是 Windows x64 单 EXE ZIP。当前源码版本号同为 2.2.1，但双目录包是**未正式发布的源码候选**，不是线上附件；不要用候选覆盖线上 2.2.1。
+[GitHub Releases](https://github.com/TwinJades/USTC_Automatic_Course_Selection_Tool/releases) 的正式 **2.2.1** 仍是 Windows x64 单 EXE ZIP；3.0.0 双目录包目前只随源码提供，**尚未发布为 GitHub Release 附件**。不要用新包直接覆盖线上 2.2.1 的下载。
 
-候选包分别为 `USTC_Automatic_Course_Selection_Tool_<版本号>_win-x64.zip` 和 `USTC_Automatic_Course_Selection_Tool_<版本号>_linux-x64.zip`，自包含运行库，解压后保留完整目录。Windows 从包根 `USTC选课助手.cmd` 启动，需要 Windows 10/11 x64 和 WebView2 Runtime；Linux 面向 x86_64、glibc、systemd 250 或更高版本，使用包根 `ustc-assistant`，需要 ICU 等 .NET 系统运行依赖。两端需要访问学校网络。
-候选包不携带 Playwright、Chromium 或独立更新器。Windows 使用系统 WebView2 Runtime 登录；Linux 使用 HTTP 登录、人工短信和图形验证码交互，不需要桌面或浏览器系统库。更新分别复用桌面主程序和 CLI 的辅助模式。
+3.0.0 目录包分别为 `USTC_Automatic_Course_Selection_Tool_3.0.0_win-x64.zip` 和 `USTC_Automatic_Course_Selection_Tool_3.0.0_linux-x64.zip`，自包含运行库，解压后保留完整目录。Windows 从包根 `USTC选课助手.cmd` 启动，需要 Windows 10/11 x64 和 WebView2 Runtime；Linux 面向 x86_64、glibc、systemd 250 或更高版本，使用包根 `ustc-assistant`，需要 ICU 等 .NET 系统运行依赖。两端需要访问学校网络。
+目录包不携带 Playwright、Chromium、Node 或独立更新器。Windows 使用系统 WebView2 Runtime 登录；Linux 使用 HTTP 登录、人工短信和图形验证码交互，不需要桌面或浏览器系统库。更新分别复用桌面主程序和 CLI 的辅助模式。
 
-从线上旧版切换至候选目录包时须先关闭旧程序，**手动解压到新的可写目录**，再启动新入口；不覆盖旧 EXE。Windows 首次启动迁移路线二旧数据，验证并提交后才回收旧目录；目标数据冲突时停止迁移。配置和日志位于包内 `data/`；Linux 更新维护工作区位于包根受 root 保护的 `.update-maintenance/`。密码可选存入操作系统保护的凭据存储。Linux 服务安装、SSH 登录及验证码步骤见[项目说明](docs/PROJECT.md)。
+从线上 2.2.1 单 EXE 切换至 3.0.0 目录包时须先关闭旧程序，**手动解压到新的可写目录**，再启动新入口；不覆盖旧 EXE，旧版应用内更新器不能跨格式升级。Windows 首次启动迁移路线二旧数据，验证并提交后才回收旧目录；目标数据冲突时停止迁移。配置和日志位于包内 `data/`；Linux 更新维护工作区位于包根受 root 保护的 `.update-maintenance/`。密码可选存入操作系统保护的凭据存储。Linux 服务安装、SSH 登录及验证码步骤见[项目说明](docs/PROJECT.md)。
 
 第一次使用 Linux 版，请先看 [Linux 使用指南](docs/Linux使用指南.md)，按步骤连接 VPS、登录、查看验证码和配置监测。
 
-Linux 已在 Ubuntu VPS 验证服务启动、HTTP 登录初始化、同版本目录替换和中断恢复；真实账号登录、短信挑战与不同版本在线更新仍未验收，2 核 2 GB 性能未实测。版本历史见 [CHANGELOG](docs/CHANGELOG.md)。
+Linux 已在 Ubuntu VPS 用真实账号完成一次 HTTP 登录（密码 → 短信页 → 按账号绑定的图形码 → 短信码 → 只读身份核验）；当时无开放轮次，未执行选退课。VPS 已更新到 3.0.0 目录包，服务启动、同版本目录替换和中断恢复已实测，加密凭据保存、不同版本在线更新和 2 核 2 GB 性能仍未验收。版本历史见 [CHANGELOG](docs/CHANGELOG.md)。
 
 ## 🔍 自动监测
 
@@ -43,7 +43,7 @@ Windows 需要程序运行且电脑清醒；重启或重新登录后持续监测
 | 课程换课 | 可指定允许退掉的冲突旧课；换课与恢复均有失败风险。 |
 | 定时抢课 | 单个北京时间预约，可设置错过后补执行与剩余课程处理。 |
 | 活动记录 | 查看脱敏活动及真实操作记录。 |
-| 账号与认证 | Windows 使用 WebView2；Linux 使用包内无头浏览器，短信和图形验证码由本人完成。密码可选由操作系统保护。 |
+| 账号与认证 | Windows 使用 WebView2；Linux 使用 HTTP 登录，短信和图形验证码由本人完成，不需要浏览器系统库。密码可选由操作系统保护。 |
 | 配置与安全 | 包内保存任务、预约和操作保护；异常后先核对再解除保护。 |
-| 更新 | 候选目录包按平台检查和安装更新；不在真实操作中强制替换，Linux 维护和恢复尚未实机验证。 |
+| 更新 | 目录包按平台检查和安装更新；不在真实操作中强制替换。Linux 同版本维护与恢复已在 VPS 实测，不同版本在线更新未验收。 |
 | 启动设置 | Windows 支持开机启动；Linux 使用 systemd 服务。 |

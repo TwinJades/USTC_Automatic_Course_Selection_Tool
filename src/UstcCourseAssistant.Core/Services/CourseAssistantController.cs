@@ -824,8 +824,12 @@ public sealed class CourseAssistantController : IAsyncDisposable
         return await new Route2AutomationEngine(reader, lease, context.StudentId, context.TurnId, Log).RunOnceAsync([task], true, token).ConfigureAwait(false);
     }
 
+    private bool MonitoringContextMatches(CourseExecutionContext context) =>
+        !(_runtime.MonitoringAuthorized || _running) || (_runtime.StudentId == context.StudentId && _runtime.TurnId == context.TurnId);
+
     private bool CurrentAppointment(long generation, CourseExecutionContext context, Guid taskId) => !_stopping && generation == _generation
         && !_runtime.SafetyPaused && !_operations.HasUnresolvedOperation && _auth.State == AuthenticationState.Authenticated
+        && MonitoringContextMatches(context)
         && _appointments.Current is { State: ScheduledSelectionState.Running, RealOperationsAuthorized: true } a
         && a.StudentId == context.StudentId && a.ExecutedTurnId == context.TurnId && a.Tasks.Any(t => t.Id == taskId && t.Enabled);
 
@@ -852,6 +856,8 @@ public sealed class CourseAssistantController : IAsyncDisposable
                 {
                     if (_stopping || generation != _generation || _auth.State != AuthenticationState.Authenticated || _runtime.SafetyPaused || _operations.HasUnresolvedOperation)
                     { _appointments.RestoreQueuedToArmed(); _blockedDue = true; Publish(); return false; }
+                    if (!MonitoringContextMatches(context))
+                    { _appointments.RestoreQueuedToArmed(); _blockedDue = true; _status = "预约与现有监测账号或轮次不同，未执行选退课。"; Publish(); return false; }
                     _appointments.MarkRunning(appointment.Id, Now);
                     var turn = ScheduledSelectionService.ResolveTurn(session, context.StudentId, context.TurnId);
                     _appointments.SetExecutedTurn(appointment.Id, turn); Publish(); return true;
@@ -866,7 +872,7 @@ public sealed class CourseAssistantController : IAsyncDisposable
                     if (confirmed.Contains(task.Id)) AutomationTaskRules.DisableConflictingLowerPriorityTasks(appointment.Tasks, task, Log);
                     await Invoke(() =>
                     {
-                        if (confirmed.Contains(task.Id))
+                        if (confirmed.Contains(task.Id) && MonitoringContextMatches(context))
                         {
                             var actual = _settings.Tasks.Where(t => t.CourseCode.Equals(task.CourseCode, StringComparison.OrdinalIgnoreCase)).ToArray();
                             if (actual.Length == 1) ApplySelection(actual[0]);
@@ -931,7 +937,7 @@ public sealed class CourseAssistantController : IAsyncDisposable
         if (_operations.HasUnresolvedOperation) { _appointments.MarkFinished(appointment.Id, ScheduledSelectionState.Interrupted, "存在待核对操作。", Now); return; }
         var settings = Clone(_settings);
         var added = ScheduledSelectionService.ImportRemainingTasks(appointment, settings);
-        _automationStore.Save(settings); _settings = settings;
+        if (added > 0) { _automationStore.Save(settings); _settings = settings; }
         if (allowMonitoring && settings.Tasks.Any(t => t.Enabled))
         {
             ValidateTasks(settings.Tasks);
@@ -941,9 +947,12 @@ public sealed class CourseAssistantController : IAsyncDisposable
                 Publish(); return;
             }
             var turn = appointment.ExecutedTurnId ?? throw new InvalidOperationException("预约缺少执行轮次。");
-            if (_session.StudentId != appointment.StudentId || _session.OpenTurns.All(t => t.Id != turn))
+            var context = new CourseExecutionContext(appointment.StudentId, turn);
+            if (_session.StudentId != appointment.StudentId || _session.OpenTurns.All(t => t.Id != turn) || !MonitoringContextMatches(context))
             {
-                Stop(true, "预约账号或轮次不匹配，监测交接已暂停。", true); Publish(); return;
+                if (_status != "预约课程已导入，执行账号、轮次或既有监测上下文不同，未自动交接。")
+                { _status = "预约课程已导入，执行账号、轮次或既有监测上下文不同，未自动交接。"; Publish(); }
+                return;
             }
             SaveRuntime(_runtime with { MonitoringAuthorized = true, SafetyPaused = false, StudentId = appointment.StudentId, TurnId = turn, SelectedTurnId = turn });
         }
@@ -952,6 +961,7 @@ public sealed class CourseAssistantController : IAsyncDisposable
         if (allowMonitoring && !_stopping && _runtime.MonitoringAuthorized && settings.Tasks.Any(t => t.Enabled))
         { _running = true; _nextCycle = Now; }
         _generation++;
+        Publish();
     }
 
     private void BeginInterruptedRecovery()

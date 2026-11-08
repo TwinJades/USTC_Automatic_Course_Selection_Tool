@@ -13,7 +13,7 @@ try
 if (Array.IndexOf(args, "--prepare") >= 0)
 {
     using var updateLock = transaction.AcquireLock();
-    var journal = transaction.Prepare(Value("--archive"), Value("--sha256"), "win-x64", "2.2.2");
+    var journal = transaction.Prepare(Value("--archive"), Value("--sha256"), "win-x64", "3.0.1");
     transaction.StartHelper(journal);
     await Task.Delay(1500);
     return;
@@ -21,8 +21,8 @@ if (Array.IndexOf(args, "--prepare") >= 0)
 if (Array.IndexOf(args, "--fault") >= 0)
 {
     using var updateLock = transaction.AcquireLock();
-    if (Value("--fault") == "downloading") transaction.BeginDownload("win-x64", "2.2.2");
-    else transaction.Prepare(Value("--archive"), Value("--sha256"), "win-x64", "2.2.2");
+    if (Value("--fault") == "downloading") transaction.BeginDownload("win-x64", "3.0.1");
+    else transaction.Prepare(Value("--archive"), Value("--sha256"), "win-x64", "3.0.1");
     return;
 }
 }

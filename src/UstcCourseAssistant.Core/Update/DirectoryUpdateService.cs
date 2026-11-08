@@ -21,7 +21,7 @@ public sealed class DirectoryUpdateService : IDisposable
         rid = runtime;
         PackageManifest.RejectReparseAncestors(root);
         http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false, UseCookies = false }) { Timeout = Timeout.InfiniteTimeSpan };
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("USTC-Course-Assistant-Directory-Updater/2.2.1");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("USTC-Course-Assistant-Directory-Updater/3.0.0");
         http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
         http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
     }

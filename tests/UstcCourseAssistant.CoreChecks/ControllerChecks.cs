@@ -2,6 +2,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using UstcCourseAssistant.Core.Authentication;
+using UstcCourseAssistant.Core.Models;
 using UstcCourseAssistant.Core.Services;
 
 internal static class ControllerChecks
@@ -135,7 +136,102 @@ internal static class ControllerChecks
         controller.Cancel(); await run;
     }
 
- 
+    public static async Task CheckAppointmentContextAsync(string directory)
+    {
+        Directory.CreateDirectory(directory);
+        static async Task WaitAsync(Func<bool> condition, string message)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (!condition())
+            {
+                if (DateTime.UtcNow >= deadline) throw new InvalidOperationException(message);
+                await Task.Delay(25);
+            }
+        }
+        static async Task<ControlReply> SendAsync(CourseAssistantController controller, string command, object arguments) =>
+            await controller.ExecuteAsync(new ControlRequest(Guid.NewGuid(), command, JsonSerializer.SerializeToElement(arguments)), CancellationToken.None);
+
+        // 预约绑定另一个开放轮次时，不得在既有监测授权下执行真实操作。
+        var executionPath = Path.Combine(directory, "different-turn-execution");
+        Directory.CreateDirectory(executionPath);
+        new RuntimeStateStore(Path.Combine(executionPath, "runtime-state.json")).Save(new RuntimeState
+            { MonitoringAuthorized = true, StudentId = 100, TurnId = 1, SelectedTurnId = 1 });
+        new AutomationStore(Path.Combine(executionPath, "automation-settings.json")).Save(new UstcCourseAssistant.Core.Models.AutomationSettings
+            { Tasks = [new UstcCourseAssistant.Core.Models.AutomationTask { CourseCode = "TEST01" }] });
+        var executionHandler = new SessionHandler(true, "[{\"id\":1,\"name\":\"one\",\"semesterName\":\"s\"},{\"id\":2,\"name\":\"two\",\"semesterName\":\"s\"}]");
+        using (var client = new HttpClient(executionHandler) { BaseAddress = new Uri("https://jw.ustc.edu.cn/") })
+        using (var auth = new TestAuthentication())
+        {
+            await using var controller = new CourseAssistantController(executionPath, auth, true, TimeProvider.System, null, () => client);
+            using var cancel = new CancellationTokenSource();
+            var run = controller.RunAsync(cancel.Token);
+            await WaitAsync(() => controller.Snapshot.Session is not null && controller.Snapshot.MonitoringRunning, "monitoring must resume for context check");
+            var at = DateTimeOffset.Now.ToOffset(TimeSpan.FromHours(8)).AddSeconds(2).ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
+            var task = new { Id = Guid.NewGuid(), Enabled = true, CourseCode = "TEST02", Priority = 1, ConflictingCourseCodes = Array.Empty<string>() };
+            var saved = await SendAsync(controller, "appointment save", new { At = at, RunWhenMissed = true, Completion = "stop", Tasks = new[] { task } });
+            Require(saved.Success, "appointment draft must save: " + saved.Message);
+            var armed = await SendAsync(controller, "appointment arm", new { Authorize = true, TurnId = 2 });
+            Require(armed.Success, "appointment must arm for another open turn: " + armed.Message);
+            await WaitAsync(() => controller.Snapshot.Status.Contains("预约与现有监测账号或轮次不同"), "appointment under another turn must be reported");
+            Require(controller.Snapshot.MonitoringContext == new CourseExecutionContext(100, 1), "monitoring context must not switch turns");
+            Require(controller.Snapshot.Appointment is { State: UstcCourseAssistant.Core.Models.ScheduledSelectionState.Armed }, "blocked appointment must return to armed");
+            Require(executionHandler.Mutations == 0, "blocked appointment must not write to school");
+            cancel.Cancel(); await run;
+        }
+
+        async Task CheckImportAsync(string name, long appointmentStudent, long executedTurn, bool shouldHandoff)
+        {
+            var path = Path.Combine(directory, name);
+            Directory.CreateDirectory(path);
+            new RuntimeStateStore(Path.Combine(path, "runtime-state.json")).Save(new RuntimeState
+                { MonitoringAuthorized = true, StudentId = 100, TurnId = 1, SelectedTurnId = 1 });
+            new AutomationStore(Path.Combine(path, "automation-settings.json")).Save(new UstcCourseAssistant.Core.Models.AutomationSettings
+                { Tasks = [new UstcCourseAssistant.Core.Models.AutomationTask { CourseCode = "TEST01" }] });
+            var now = DateTimeOffset.Now.ToOffset(TimeSpan.FromHours(8));
+            var service = new ScheduledSelectionService(new ScheduledSelectionStore(Path.Combine(path, "scheduled-selections.json")));
+            var appointment = new UstcCourseAssistant.Core.Models.ScheduledSelection
+            {
+                StudentId = appointmentStudent, ExecuteAt = now.AddSeconds(1), RunWhenMissed = true, RealOperationsAuthorized = true,
+                CompletionAction = UstcCourseAssistant.Core.Models.ScheduledCompletionAction.ImportToMonitoring,
+                Tasks = [new UstcCourseAssistant.Core.Models.AutomationTask { CourseCode = "TEST02" }]
+            };
+            service.Arm(appointment, now);
+            var due = service.CollectDue(now.AddSeconds(2), resumed: true)!;
+            service.MarkRunning(due.Id, now.AddSeconds(2));
+            service.MarkSelectionFinished(due.Id, new UstcCourseAssistant.Core.Models.TurnInfo(executedTurn, "turn" + executedTurn, "s"), due.Tasks);
+            var handler = new SessionHandler(true, "[{\"id\":1,\"name\":\"one\",\"semesterName\":\"s\"},{\"id\":2,\"name\":\"two\",\"semesterName\":\"s\"}]");
+            using var client = new HttpClient(handler) { BaseAddress = new Uri("https://jw.ustc.edu.cn/") };
+            using var auth = new TestAuthentication();
+            await using var controller = new CourseAssistantController(path, auth, true, TimeProvider.System, null, () => client);
+            using var cancel = new CancellationTokenSource();
+            var run = controller.RunAsync(cancel.Token);
+            await WaitAsync(() => controller.Snapshot.Monitoring.Tasks.Any(t => t.CourseCode == "TEST02"), name + " must import remaining courses idempotently");
+            await WaitAsync(() => controller.Snapshot.Appointment is { ImportFinished: true } || controller.Snapshot.Status.Contains("未自动交接"),
+                name + " must settle the handoff");
+            Require(handler.Mutations == 0, name + " must not write to school");
+            Require(controller.Snapshot.MonitoringContext == new CourseExecutionContext(100, 1), name + " must preserve monitoring context");
+            ReloadRuntime(path, out var runtime);
+            Require(runtime is { MonitoringAuthorized: true, TurnId: 1 }, name + " must not rewrite persisted monitoring authorization");
+            Require(controller.Snapshot.Appointment?.ImportFinished == shouldHandoff, name + " import completion state");
+            if (shouldHandoff)
+            {
+                Require(controller.Snapshot.Appointment?.State == UstcCourseAssistant.Core.Models.ScheduledSelectionState.Completed, name + " must complete handoff");
+                Require(controller.Snapshot.MonitoringRunning, name + " must start monitoring in the same context");
+            }
+            else
+            {
+                Require(controller.Snapshot.Status.Contains("未自动交接"), name + " must report blocked handoff");
+            }
+            cancel.Cancel(); await run;
+        }
+        await CheckImportAsync("same-context", 100, 1, true);
+        await CheckImportAsync("closed-turn", 100, 9, false);
+        await CheckImportAsync("other-account", 101, 1, false);
+    }
+
+    private static void ReloadRuntime(string path, out RuntimeState state) =>
+        state = new RuntimeStateStore(Path.Combine(path, "runtime-state.json")).Load().State;
+
     private sealed class TestAuthentication : IAuthenticationService
     {
         public AuthenticationSnapshot Snapshot { get; private set; } = new(AuthenticationState.SignedOut, null, "signed out", null);
@@ -149,7 +245,7 @@ internal static class ControllerChecks
         public void Dispose() { }
     }
 
-    private sealed class SessionHandler(bool turnOpen = true) : HttpMessageHandler
+    private sealed class SessionHandler(bool turnOpen = true, string? turns = null) : HttpMessageHandler
      {
         public int Mutations { get; private set; }
 
@@ -160,7 +256,7 @@ internal static class ControllerChecks
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Redirect) { Headers = { Location = new Uri("/for-std/course-table/100", UriKind.Relative) } });
             if (path == "/for-std/course-table/100") return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
             if (path == "/ws/for-std/course-select/open-turns")
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(turnOpen ? "[{\"id\":1,\"name\":\"test\",\"semesterName\":\"test\"}]" : "[]", Encoding.UTF8, "application/json") });
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(turns ?? (turnOpen ? "[{\"id\":1,\"name\":\"test\",\"semesterName\":\"test\"}]" : "[]"), Encoding.UTF8, "application/json") });
             if (path is "/ws/for-std/course-select/selected-lessons" or "/ws/for-std/course-select/addable-lessons")
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]", Encoding.UTF8, "application/json") });
             Mutations++;

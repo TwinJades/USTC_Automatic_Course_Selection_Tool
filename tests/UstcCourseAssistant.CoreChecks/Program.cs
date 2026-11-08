@@ -49,6 +49,7 @@ try
     await ControllerChecks.CheckRestartAsync(Path.Combine(testRoot, "restart"));
     ControllerChecks.CheckMissedAppointments(Path.Combine(testRoot, "appointments"));
     await ControllerChecks.CheckPendingImportAsync(Path.Combine(testRoot, "import"));
+    await ControllerChecks.CheckAppointmentContextAsync(Path.Combine(testRoot, "appointment-context"));
     await IpcChecks.RunAsync(Path.Combine(testRoot, "ipc"));
     PortableMigrationChecks.Run(Path.Combine(testRoot, "migration"));
     await HttpAuthenticationChecks.RunAsync(testRoot);

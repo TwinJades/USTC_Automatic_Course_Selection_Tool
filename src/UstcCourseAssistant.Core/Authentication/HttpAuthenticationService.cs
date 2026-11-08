@@ -250,7 +250,7 @@ public sealed class HttpAuthenticationService : IAuthenticationService
             ["screenResolution"] = screen, ["fingerprint"] = Hash(fonts + memory + cpu + timezone + cpuClass + platform + language + screen),
             ["localgroupId"] = group, ["cookieValue"] = device, ["rememberToken"] = remember, ["noticeAck"] = "0",
             ["webglFingerprint"] = "unavailable", ["maxTouchPoints"] = "unavailable", ["colorDepth"] = "unavailable",
-            ["pixelRatio"] = "unavailable", ["userAgent"] = "USTC-Course-Assistant/2.2.1 HTTP client", ["platformAuthenticator"] = "unavailable"
+            ["pixelRatio"] = "unavailable", ["userAgent"] = "USTC-Course-Assistant/3.0.0 HTTP client", ["platformAuthenticator"] = "unavailable"
         };
         EnsureAllowed(Fingerprint);
         using var request = new HttpRequestMessage(HttpMethod.Post, Fingerprint) { Content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json") };

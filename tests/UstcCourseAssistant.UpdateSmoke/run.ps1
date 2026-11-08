@@ -25,7 +25,7 @@ function Initialize-SmokeData([string]$root) {
     [IO.File]::WriteAllText((Join-Path $root 'data/preferences.json'), $preferences)
 }
 $packages = @{}
-foreach ($version in @('2.2.1','2.2.2')) {
+foreach ($version in @('3.0.0','3.0.1')) {
     Write-Output "Publishing application $version"
     $root = Join-Path $work $version
     New-Item -ItemType Directory -Path (Join-Path $root 'app'),(Join-Path $root 'data') -Force | Out-Null
@@ -43,19 +43,19 @@ foreach ($version in @('2.2.1','2.2.2')) {
     Write-Output "Archive created $version"
     $packages[$version] = $zip
 }
-$root = Join-Path $work '2.2.1'
+$root = Join-Path $work '3.0.0'
 Initialize-SmokeData $root
 [IO.File]::WriteAllText((Join-Path $root 'data/sentinel'), 'unchanged')
-$hash = (Get-FileHash -LiteralPath $packages['2.2.2'] -Algorithm SHA256).Hash
-Expand-Archive -LiteralPath $packages['2.2.1'] -DestinationPath (Join-Path $work 'old-extracted')
+$hash = (Get-FileHash -LiteralPath $packages['3.0.1'] -Algorithm SHA256).Hash
+Expand-Archive -LiteralPath $packages['3.0.0'] -DestinationPath (Join-Path $work 'old-extracted')
 Copy-Item -LiteralPath (Join-Path $work 'old-extracted/package-manifest.json') -Destination $root
 $stdout = Join-Path $work 'process-stdout.log'
 $stderr = Join-Path $work 'process-stderr.log'
-$proc = Start-Process -FilePath (Join-Path $work 'fixture-2.2.1/UstcCourseAssistant.Route2.exe') -ArgumentList @('--package-root', ('"'+$root+'"'), '--prepare', '--archive', ('"'+$packages['2.2.2']+'"'), '--sha256', $hash) -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
+$proc = Start-Process -FilePath (Join-Path $work 'fixture-3.0.0/UstcCourseAssistant.Route2.exe') -ArgumentList @('--package-root', ('"'+$root+'"'), '--prepare', '--archive', ('"'+$packages['3.0.1']+'"'), '--sha256', $hash) -RedirectStandardOutput $stdout -RedirectStandardError $stderr -PassThru
 Wait-FixtureProcess $proc 'Preparing update'
 if ($proc.ExitCode -ne 0) { throw ("Preparing update failed (exit $($proc.ExitCode)): " + (Get-Content -Raw -ErrorAction SilentlyContinue $stderr)) }
 $deadline = [DateTime]::UtcNow.AddSeconds(90)
-while ((Test-Path -LiteralPath (Join-Path $root 'data/updates/active')) -or (Get-Item (Join-Path $root 'app/UstcCourseAssistant.Route2.exe') -ErrorAction SilentlyContinue).VersionInfo.FileVersion -ne '2.2.2.0') {
+while ((Test-Path -LiteralPath (Join-Path $root 'data/updates/active')) -or (Get-Item (Join-Path $root 'app/UstcCourseAssistant.Route2.exe') -ErrorAction SilentlyContinue).VersionInfo.FileVersion -ne '3.0.1.0') {
     $errorLog = Join-Path $root 'data/smoke-error.log'
     if (Test-Path -LiteralPath $errorLog) { throw ('Fixture failed: ' + (Get-Content -Raw -LiteralPath $errorLog)) }
     if ([DateTime]::UtcNow -gt $deadline) { throw ('Update did not complete. stdout: ' + (Get-Content -Raw -ErrorAction SilentlyContinue $stdout) + ' stderr: ' + (Get-Content -Raw -ErrorAction SilentlyContinue $stderr)) }
@@ -67,11 +67,11 @@ if (Test-Path -LiteralPath (Join-Path $root 'data/updates/active')) { throw 'Act
 foreach ($fault in @('downloading','missing-journal','old-app','new-app','ready','committed')) {
     Write-Output "Testing recovery: $fault"
     $faultRoot = Join-Path $work "O'Brien-fault-$fault"
-    Expand-Archive -LiteralPath $packages['2.2.1'] -DestinationPath $faultRoot
+    Expand-Archive -LiteralPath $packages['3.0.0'] -DestinationPath $faultRoot
     Initialize-SmokeData $faultRoot
     [IO.File]::WriteAllText((Join-Path $faultRoot 'data/sentinel'), 'unchanged')
     $fixtureFault = if ($fault -eq 'missing-journal') { 'downloading' } else { $fault }
-    $fixture = Start-Process -FilePath (Join-Path $work 'fixture-2.2.1/UstcCourseAssistant.Route2.exe') -ArgumentList @('--package-root', ('"'+$faultRoot+'"'), '--fault', $fixtureFault, '--archive', ('"'+$packages['2.2.2']+'"'), '--sha256', $hash) -PassThru
+    $fixture = Start-Process -FilePath (Join-Path $work 'fixture-3.0.0/UstcCourseAssistant.Route2.exe') -ArgumentList @('--package-root', ('"'+$faultRoot+'"'), '--fault', $fixtureFault, '--archive', ('"'+$packages['3.0.1']+'"'), '--sha256', $hash) -PassThru
     Wait-FixtureProcess $fixture "Fault fixture $fault"
     if ($null -eq $fixture.ExitCode -or $fixture.ExitCode -ne 0) {
         $failure = Join-Path $faultRoot 'data/smoke-error.log'
@@ -112,7 +112,7 @@ foreach ($fault in @('downloading','missing-journal','old-app','new-app','ready'
     }
     Stop-SmokeDesktop $faultRoot
     $manifest = Get-Content -Raw -LiteralPath (Join-Path $faultRoot 'package-manifest.json') | ConvertFrom-Json
-    $expected = if ($fault -eq 'committed') { '2.2.2' } else { '2.2.1' }
+    $expected = if ($fault -eq 'committed') { '3.0.1' } else { '3.0.0' }
     if ($manifest.Version -ne $expected -or (Get-Item (Join-Path $faultRoot 'app/UstcCourseAssistant.Route2.exe')).VersionInfo.FileVersion -ne "$expected.0" -or (Get-Content -Raw (Join-Path $faultRoot 'data/sentinel')) -ne 'unchanged') { throw "Recovery verification failed: $fault" }
 }
 Write-Output 'A to B update committed; data preserved; active transaction recycled.'

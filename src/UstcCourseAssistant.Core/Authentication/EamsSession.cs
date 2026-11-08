@@ -22,7 +22,7 @@ public sealed class EamsSession : IDisposable
             UseCookies = true
         };
         Client = new HttpClient(handler) { BaseAddress = new Uri("https://jw.ustc.edu.cn/"), Timeout = TimeSpan.FromSeconds(20), MaxResponseContentBufferSize = 1024 * 1024 };
-        Client.DefaultRequestHeaders.UserAgent.ParseAdd("USTC-Course-Assistant/2.2.1");
+        Client.DefaultRequestHeaders.UserAgent.ParseAdd("USTC-Course-Assistant/3.0.0");
         Client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("zh-CN,zh;q=0.9");
     }
 

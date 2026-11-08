@@ -101,12 +101,36 @@ public partial class MainWindow
         return reply.Success;
     }
     private async void SaveScheduledButton_Click(object sender, RoutedEventArgs e) => await SaveAppointmentAsync();
+
+    private string AppointmentAuthorizationSummary()
+    {
+        var session = _controller.Snapshot.Session;
+        var turn = TurnSelector.SelectedItem as TurnInfo;
+        var lines = new List<string>
+        {
+            "确认授权此预约在指定时间执行一次真实选退课及所选完成方式？",
+            $"预约账号：{session?.StudentId.ToString() ?? "未验证"}",
+            $"执行时间：{ScheduledDatePicker.SelectedDate!.Value:yyyy-MM-dd} {ScheduledTimeText.Text}（北京时间）",
+            turn is not null
+                ? $"执行轮次：{turn.Name}（ID {turn.Id}）"
+                : $"执行轮次：到期时唯一开放的轮次（当前开放 {session?.OpenTurns.Count ?? 0} 个；无开放轮次不执行）",
+            ScheduledRunWhenMissedCheckBox.IsChecked == true ? "错过时间：补执行一次" : "错过时间：不补执行",
+            ScheduledCompletionSelector.SelectedIndex == 1 ? "完成方式：剩余有效课程导入监测" : "完成方式：执行一轮后停止"
+        };
+        foreach (var task in _appointmentTasks.Where(t => t.Enabled).OrderBy(t => t.Priority))
+        {
+            var conflicts = task.ConflictingCourseCodes.Count == 0 ? "未指定可退旧课" : "可退旧课 " + string.Join("、", task.ConflictingCourseCodes);
+            lines.Add($"课程：{task.CourseCode}（优先级 {task.Priority}，{conflicts}）");
+        }
+        lines.Add("确认后仍可能因余量、冲突或学校限制失败；请到教务系统核对最终结果。");
+        return string.Join(Environment.NewLine, lines);
+    }
     private async void ArmScheduledButton_Click(object sender, RoutedEventArgs e)
     {
         if (ScheduledAuthorizationCheckBox.IsChecked != true) { ScheduledStatusText.Text = "请明确授权预约真实操作。"; return; }
         if (_controller.Snapshot.Session is null) { ScheduledStatusText.Text = "请先登录并验证教务会话。"; return; }
         if (!await SaveAppointmentAsync()) return;
-        if (MessageBox.Show(this, "确认授权此预约在指定时间执行一次真实选退课及所选完成方式？", "预约授权确认", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
+        if (MessageBox.Show(this, AppointmentAuthorizationSummary(), "预约授权确认", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
         var turn = (TurnSelector.SelectedItem as TurnInfo)?.Id;
         var reply = turn.HasValue ? await Send("appointment arm", new { Authorize = true, TurnId = turn.Value }) : await Send("appointment arm", new { Authorize = true });
         ScheduledStatusText.Text = reply.Message;
