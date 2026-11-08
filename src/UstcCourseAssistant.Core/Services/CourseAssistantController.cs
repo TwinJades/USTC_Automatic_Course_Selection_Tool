@@ -706,6 +706,14 @@ public sealed class CourseAssistantController : IAsyncDisposable
                 var waiting = _auth.State == AuthenticationState.AwaitingSms ? "预约等待人工验证" : "预约等待登录";
                 if (_status != waiting) { _status = waiting; Publish(); }
             }
+            else if (_runtime.SelectedTurnId is { } selectedTurn
+                && _session.OpenTurns.Any(t => t.Id == selectedTurn)
+                && !MonitoringContextMatches(new CourseExecutionContext(_session.StudentId, selectedTurn)))
+            {
+                _blockedDue = true;
+                const string blocked = "预约与现有监测账号或轮次不同，未执行选退课。";
+                if (_status != blocked) { _status = blocked; Publish(); }
+            }
             else
             {
                 _appointmentBusy = true;
