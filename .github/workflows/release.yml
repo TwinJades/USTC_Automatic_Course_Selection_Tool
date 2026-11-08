@@ -50,9 +50,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $version = $env:RELEASE_TAG.Substring(1)
-          $archive = "artifacts/candidate/USTC_Automatic_Course_Selection_Tool_${version}_$($env:RUNTIME).zip"
-          Expand-Archive -LiteralPath $archive -DestinationPath artifacts/fixture-package
-          $env:USTC_BROWSER_FIXTURE_PACKAGE_ROOT = (Resolve-Path artifacts/fixture-package).Path
           if ($env:RUNTIME -eq 'win-x64') {
             dotnet build UstcCourseAssistant.sln -c Release
             if ($LASTEXITCODE -ne 0) { throw 'Solution build failed.' }

@@ -1,9 +1,6 @@
 # 路线一 SHA-256 保护基线
-# 生成日期：2026-08-27
-# 范围：src/UstcCourseAssistant（排除 bin/obj）与路线一正式版可执行文件
+# 范围：src/UstcCourseAssistant（排除 bin/obj）
 # 格式：SHA256  相对路径
-# 2026-09-28：路径按当前解压目录修正；csproj 按当前 Git 主分支重核（旧记录：51a2633fddab09124aa62bf7cb8cf9ae407966a054df1b39eef731c55a92ed7a）。
-47bd469613ce4e9b9cbbb004f9d2cc603d548c80c86043e8b2c8190616c0bfe1  release/1.0.0/USTC_Automatic_Course_Selection_Tool_1.0.0/USTC_Automatic_Course_Selection_Tool_1.0.0.exe
 fcb8bb88991692423e37592af607fc691abd98909e3a848ebece8cc318a8fffa  src/UstcCourseAssistant/app.manifest
 df0a3f8e76d3329ad14684c89fef086687ee25718d55498ff6699d573c063534  src/UstcCourseAssistant/App.xaml
 ebeb5057296c47bf879a9514e037d2f181d5cfe16c0f6f8d7707682f270e748f  src/UstcCourseAssistant/App.xaml.cs
