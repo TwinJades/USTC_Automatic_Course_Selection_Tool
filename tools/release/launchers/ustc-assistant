@@ -1,0 +1,53 @@
+#!/bin/sh
+set -eu
+ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+ACTIVE="$ROOT/.update-maintenance/active"
+if [ "${1-}" = recover-update ]; then
+    [ "$(id -u)" = 0 ] || { echo 'Update recovery requires root.' >&2; exit 1; }
+    [ -d "$ACTIVE" ] || exit 0
+    JOURNAL="$ACTIVE/journal.json"
+    stage=''
+    if [ -f "$JOURNAL" ]; then
+        while IFS= read -r line; do
+            case "$line" in *'"Stage": "'*) stage=${line#*'"Stage": "'}; stage=${stage%%\"*} ;; esac
+        done < "$JOURNAL"
+    fi
+    if [ -z "$stage" ] || [ "$stage" = Downloading ]; then
+        exec "$ROOT/app/UstcCourseAssistant.Cli" --update-helper recover "$ROOT"
+    fi
+    LIST="$ACTIVE/helper.sha256"
+    [ -f "$LIST" ] || { echo 'Missing update helper manifest.' >&2; exit 1; }
+    DIGEST=''
+    while IFS= read -r line; do
+        case "$line" in *'"HelperManifestSha256": "'*) DIGEST=${line#*'"HelperManifestSha256": "'}; DIGEST=${DIGEST%%\"*} ;; esac
+    done < "$JOURNAL"
+    case "$DIGEST" in *[!0-9a-f]*|'') exit 1;; esac
+    [ ${#DIGEST} -eq 64 ] || exit 1
+    ACTUAL=$(sha256sum "$LIST"); ACTUAL=${ACTUAL%% *}
+    [ "$ACTUAL" = "$DIGEST" ] || exit 1
+    while IFS= read -r line; do
+        hash=${line%%  *}; path=${line#*  }
+        case "$hash" in *[!0-9a-f]*|'') exit 1;; esac
+        [ ${#hash} -eq 64 ] || exit 1
+        case "$path" in ''|/*|*\\*|*:*|../*|*/../*|*/..|./*|*/./*|*/.) exit 1;; esac
+        [ -f "$ACTIVE/helper/$path" ] && [ ! -L "$ACTIVE/helper/$path" ] || exit 1
+        actual=$(sha256sum "$ACTIVE/helper/$path"); actual=${actual%% *}
+        [ "$actual" = "$hash" ] || exit 1
+    done < "$LIST"
+    expected=$(wc -l < "$LIST"); actual=$(find "$ACTIVE/helper" -type f | wc -l)
+    [ "$expected" -eq "$actual" ] || exit 1
+    [ -z "$(find "$ACTIVE/helper" -type l -print -quit)" ] || exit 1
+    exec "$ACTIVE/helper/UstcCourseAssistant.Cli" --update-helper recover "$ROOT"
+fi
+if [ -d "$ACTIVE" ] && [ "${1-}" = serve ]; then
+    stage=''
+    while IFS= read -r line; do
+        case "$line" in *'"Stage": "'*) stage=${line#*'"Stage": "'}; stage=${stage%%\"*} ;; esac
+    done < "$ACTIVE/journal.json"
+    if [ "$stage" = PendingReady ]; then
+        exec "$ROOT/app/UstcCourseAssistant.Cli" --package-root "$ROOT" --update-pending "$@"
+    fi
+    echo 'Update recovery required before service start.' >&2
+    exit 1
+fi
+exec "$ROOT/app/UstcCourseAssistant.Cli" --package-root "$ROOT" "$@"

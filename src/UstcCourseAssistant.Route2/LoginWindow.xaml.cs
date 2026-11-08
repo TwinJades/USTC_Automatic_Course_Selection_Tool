@@ -5,6 +5,7 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using UstcCourseAssistant.Route2.Services;
+using UstcCourseAssistant.Core.Services;
 
 namespace UstcCourseAssistant.Route2;
 
@@ -46,12 +47,11 @@ public partial class LoginWindow : Window
         _initialized = true;
         try
         {
-            var profile = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "USTC Course Assistant Route2",
-                "browser-profile");
+            var profile = Path.Combine(AppDataPaths.Root, "browser-profile");
             var environment = await CoreWebView2Environment.CreateAsync(userDataFolder: profile);
             await Browser.EnsureCoreWebView2Async(environment);
+            Browser.CoreWebView2.Settings.IsPasswordAutosaveEnabled = false;
+            Browser.CoreWebView2.Settings.IsGeneralAutofillEnabled = false;
 
             Browser.CoreWebView2.NavigationStarting += (_, _) =>
             {
@@ -170,21 +170,10 @@ public partial class LoginWindow : Window
         Browser.CoreWebView2?.CookieManager.DeleteAllCookies();
     }
 
-    public async Task<AuthenticatedSessionBridge> CreateSessionBridgeAsync(
-        CancellationToken cancellationToken = default)
+    public Task<UstcCourseAssistant.Core.Authentication.AuthenticationSnapshot> ImportSessionAsync(WebViewAuthenticationService authentication, CancellationToken cancellationToken = default)
     {
-        if (Browser.CoreWebView2 is null)
-        {
-            throw new InvalidOperationException("教务浏览器仍在初始化。");
-        }
-
-        var currentPage = Uri.TryCreate(Browser.Source?.AbsoluteUri, UriKind.Absolute, out var page)
-            ? page
-            : null;
-        return await AuthenticatedSessionBridge.CreateAsync(
-            Browser.CoreWebView2,
-            currentPage,
-            cancellationToken);
+        if (Browser.CoreWebView2 is null) throw new InvalidOperationException("教务浏览器仍在初始化。 ");
+        return authentication.ImportAsync(Browser.CoreWebView2, cancellationToken);
     }
 
     public void CloseForApplication()

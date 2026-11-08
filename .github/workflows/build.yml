@@ -31,3 +31,21 @@ jobs:
 
       - name: Run CI-safe offline regression checks
         run: dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks --configuration Release --no-build -- --skip-ui
+
+      - name: Run shared-core behavioral checks
+        run: dotnet run --project tests/UstcCourseAssistant.CoreChecks --configuration Release --no-build
+
+  linux-core:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 9.0.x
+      - name: Build Linux CLI
+        run: dotnet build src/UstcCourseAssistant.Cli --configuration Release
+      - name: Run shared-core checks
+        run: dotnet run --project tests/UstcCourseAssistant.CoreChecks --configuration Release
+      - name: Verify package security boundaries
+        run: python -m unittest discover -s tools/release -p test_package_directory.py

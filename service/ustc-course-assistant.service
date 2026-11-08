@@ -1,0 +1,22 @@
+# Install with `ustc-assistant service install`; the installer writes absolute package paths
+# and conditionally adds LoadCredentialEncrypted for the protected system credential.
+[Unit]
+Description=USTC Course Assistant
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ustc-assistant
+Group=ustc-assistant
+ExecStartPre=+"@PACKAGE_ROOT@/ustc-assistant" recover-update
+ExecStart="@PACKAGE_ROOT@/ustc-assistant" serve
+Environment="TMPDIR=@PACKAGE_ROOT@/data/tmp"
+Restart=on-failure
+RestartSec=5
+UMask=0077
+LimitCORE=0
+TimeoutStopSec=infinity
+
+[Install]
+WantedBy=multi-user.target

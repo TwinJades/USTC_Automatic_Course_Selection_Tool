@@ -1,0 +1,119 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            runtime: win-x64
+          - os: ubuntu-24.04
+            runtime: linux-x64
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 9.0.x
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Package candidate
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RUNTIME: ${{ matrix.runtime }}
+        run: ./tools/release/Publish-Release.ps1 -Tag $env:RELEASE_TAG -Runtime $env:RUNTIME -OutputDirectory artifacts/candidate
+      - name: Run behavioral checks
+        shell: pwsh
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RUNTIME: ${{ matrix.runtime }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_TAG.Substring(1)
+          $archive = "artifacts/candidate/USTC_Automatic_Course_Selection_Tool_${version}_$($env:RUNTIME).zip"
+          Expand-Archive -LiteralPath $archive -DestinationPath artifacts/fixture-package
+          $env:USTC_BROWSER_FIXTURE_PACKAGE_ROOT = (Resolve-Path artifacts/fixture-package).Path
+          if ($env:RUNTIME -eq 'win-x64') {
+            dotnet build UstcCourseAssistant.sln -c Release
+            if ($LASTEXITCODE -ne 0) { throw 'Solution build failed.' }
+            dotnet run --project tests/UstcCourseAssistant.Route2.EngineChecks -c Release --no-build -- --skip-ui
+            if ($LASTEXITCODE -ne 0) { throw 'Windows engine checks failed.' }
+          }
+          dotnet run --project tests/UstcCourseAssistant.CoreChecks -c Release
+          if ($LASTEXITCODE -ne 0) { throw 'Core checks failed.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.runtime }}
+          path: artifacts/candidate/*.zip
+          if-no-files-found: error
+
+  release:
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      PYTHONUTF8: '1'
+      PYTHONIOENCODING: utf-8
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: package-*
+          path: artifacts/candidate
+          merge-multiple: true
+      - name: Verify candidates and draft
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_TAG.Substring(1)
+          $archives = @(foreach ($rid in @('win-x64','linux-x64')) { "artifacts/candidate/USTC_Automatic_Course_Selection_Tool_${version}_${rid}.zip" })
+          foreach ($rid in @('win-x64','linux-x64')) {
+            $archive = "artifacts/candidate/USTC_Automatic_Course_Selection_Tool_${version}_${rid}.zip"
+            python tools/release/verify_archive.py --tag $env:RELEASE_TAG --runtime $rid --archive $archive
+            if ($LASTEXITCODE -ne 0) { throw 'Candidate verification failed.' }
+          }
+          python tools/release/release_notes.py --tag $env:RELEASE_TAG --output artifacts/release-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'Release notes failed.' }
+          gh release create $env:RELEASE_TAG --verify-tag --draft --title "USTC 选课助手 $version" --notes-file artifacts/release-notes.md
+          if ($LASTEXITCODE -ne 0) { throw 'Draft creation failed.' }
+          gh release upload $env:RELEASE_TAG @archives
+          if ($LASTEXITCODE -ne 0) { throw 'Upload failed; draft retained.' }
+          $release = gh release view $env:RELEASE_TAG --json assets,body,isDraft,tagName | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or -not $release.isDraft -or $release.tagName -cne $env:RELEASE_TAG -or @($release.assets).Count -ne 2 -or $release.body.Trim() -cne (Get-Content artifacts/release-notes.md -Raw).Trim()) { throw 'Draft metadata mismatch.' }
+          foreach ($archive in $archives) {
+            $asset = @($release.assets | Where-Object { $_.name -ceq (Split-Path $archive -Leaf) })
+            $digest = 'sha256:' + (Get-FileHash -Algorithm SHA256 $archive).Hash.ToLowerInvariant()
+            if ($asset.Count -ne 1 -or $asset[0].size -ne (Get-Item $archive).Length -or $asset[0].digest -cne $digest) { throw 'Uploaded asset mismatch.' }
+          }
+          gh release edit $env:RELEASE_TAG --draft=false
+          if ($LASTEXITCODE -ne 0) { throw 'Publish failed; draft retained.' }
