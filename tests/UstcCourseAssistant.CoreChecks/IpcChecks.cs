@@ -31,29 +31,49 @@ internal static class IpcChecks
         var failure = await ControlProtocol.ReadReplyAsync(oversized, id, CancellationToken.None);
         if (failure.GetProperty("Success").GetBoolean() || failure.GetProperty("Code").GetString() != "response_too_large") throw new InvalidOperationException("过大回复没有返回结构化失败。 ");
 
-        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var server = new ControlServer(directory, (request, _) =>
+        var serverDirectory = directory;
+        string? shortDirectory = null;
+        if (!OperatingSystem.IsWindows())
         {
-            var command = request.GetProperty("Command").GetString();
-            var requestId = request.GetProperty("Id").GetGuid();
-            return Task.FromResult<object>(new ControlReply(requestId, command == "status", command == "status" ? "ok" : "invalid_arguments", "fixture", null));
-        }, _ => Task.CompletedTask, () => Task.CompletedTask);
-        var running = server.RunAsync(cancellation.Token);
+            // AF_UNIX 路径上限为 107 字节，CI 工作目录可能更长，使用独立短目录。
+            shortDirectory = Path.Combine(Path.GetTempPath(), "uci-" + Guid.NewGuid().ToString("N")[..12]);
+            Directory.CreateDirectory(shortDirectory);
+            serverDirectory = shortDirectory;
+        }
         try
         {
-            var requestId = Guid.NewGuid();
-            JsonElement response;
-            if (OperatingSystem.IsLinux())
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            var server = new ControlServer(serverDirectory, (request, _) =>
             {
-                for (var attempt = 0; !Path.Exists(Path.Combine(directory, "control.sock")) && attempt < 100; attempt++) await Task.Delay(20, cancellation.Token);
+                var command = request.GetProperty("Command").GetString();
+                var requestId = request.GetProperty("Id").GetGuid();
+                return Task.FromResult<object>(new ControlReply(requestId, command == "status", command == "status" ? "ok" : "invalid_arguments", "fixture", null));
+            }, _ => Task.CompletedTask, () => Task.CompletedTask);
+            var running = server.RunAsync(cancellation.Token);
+            try
+            {
+                var requestId = Guid.NewGuid();
+                JsonElement response;
+                if (OperatingSystem.IsLinux())
+                {
+                    for (var attempt = 0; !Path.Exists(Path.Combine(serverDirectory, "control.sock")) && attempt < 100; attempt++) await Task.Delay(20, cancellation.Token);
+                }
+                response = await ControlClient.SendAsync(serverDirectory, new ControlRequest(requestId, "status", JsonSerializer.SerializeToElement(new { })), cancellation.Token);
+                if (!response.GetProperty("Success").GetBoolean() || response.GetProperty("Id").GetGuid() != requestId) throw new InvalidOperationException("IPC 状态请求失败。");
             }
-            response = await ControlClient.SendAsync(directory, new ControlRequest(requestId, "status", JsonSerializer.SerializeToElement(new { })), cancellation.Token);
-            if (!response.GetProperty("Success").GetBoolean() || response.GetProperty("Id").GetGuid() != requestId) throw new InvalidOperationException("IPC 状态请求失败。");
+            finally
+            {
+                cancellation.Cancel();
+                try { await running; } catch (OperationCanceledException) { }
+            }
         }
         finally
         {
-            cancellation.Cancel();
-            try { await running; } catch (OperationCanceledException) { }
+            if (shortDirectory is not null)
+            {
+                try { Directory.Delete(shortDirectory, recursive: true); }
+                catch (IOException) { }
+            }
         }
     }
 
