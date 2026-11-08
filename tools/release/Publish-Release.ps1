@@ -55,9 +55,22 @@ $release = Join-Path $workspace 'release'
 New-Item -ItemType Directory -Path $release -Force | Out-Null
 $destination = Join-Path $release (Split-Path $archive -Leaf)
 if (Test-Path -LiteralPath $destination) {
-    Add-Type -AssemblyName Microsoft.VisualBasic
-    [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($destination, 'OnlyErrorDialogs', 'SendToRecycleBin')
+    if ($hostWindows) {
+        Add-Type -AssemblyName Microsoft.VisualBasic
+        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($destination, 'OnlyErrorDialogs', 'SendToRecycleBin')
+    } else {
+        Remove-Item -LiteralPath $destination -Force
+    }
 }
 Copy-Item -LiteralPath $archive -Destination $destination
+foreach ($stale in Get-ChildItem -LiteralPath $release -Filter 'USTC_Automatic_Course_Selection_Tool_*.zip' -File) {
+    if ($stale.FullName -eq $destination) { continue }
+    if ($hostWindows) {
+        Add-Type -AssemblyName Microsoft.VisualBasic
+        [Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile($stale.FullName, 'OnlyErrorDialogs', 'SendToRecycleBin')
+    } else {
+        Remove-Item -LiteralPath $stale.FullName -Force
+    }
+}
 Write-Output "Release archive: $destination"
 Write-Output "Candidate archive: $archive"
