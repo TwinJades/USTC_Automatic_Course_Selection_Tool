@@ -22,7 +22,19 @@ internal static class CliSecurityChecks
         await RejectReplyAsync(id, new { Id = id, Sequence = 0, End = true, Data = "***" }, secret);
         await RejectReplyAsync(id, new { Id = id, Sequence = 0, End = true, Data = "" }, secret);
         await RejectReplyAsync(id, new { Id = id, Sequence = 0, End = true, Data = Convert.ToBase64String(Encoding.UTF8.GetBytes("{\"Id\":\"" + Guid.NewGuid() + "\",\"Message\":\"" + secret + "\"}")) }, secret);
-        await CheckStartupAndSingletonAsync(Path.Combine(root, "server"));
+        if (OperatingSystem.IsWindows()) await CheckStartupAndSingletonAsync(Path.Combine(root, "server"));
+        else
+        {
+            // AF_UNIX 路径上限为 107 字节，CI 工作目录可能更长，使用独立短目录。
+            var shortRoot = Path.Combine(Path.GetTempPath(), "uca-" + Guid.NewGuid().ToString("N")[..12]);
+            Directory.CreateDirectory(shortRoot);
+            try { await CheckStartupAndSingletonAsync(shortRoot); }
+            finally
+            {
+                try { Directory.Delete(shortRoot, recursive: true); }
+                catch (IOException) { }
+            }
+        }
         if (OperatingSystem.IsWindows()) await CheckProcessCancellationAsync(root);
     }
 

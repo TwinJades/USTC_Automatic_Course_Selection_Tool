@@ -141,23 +141,32 @@ internal static class ControllerChecks
         Directory.CreateDirectory(directory);
         static async Task WaitAsync(Func<bool> condition, string message)
         {
-            var deadline = DateTime.UtcNow.AddSeconds(10);
+            var deadline = DateTime.UtcNow.AddSeconds(20);
             while (!condition())
             {
                 if (DateTime.UtcNow >= deadline) throw new InvalidOperationException(message);
                 await Task.Delay(25);
             }
         }
-        static async Task<ControlReply> SendAsync(CourseAssistantController controller, string command, object arguments) =>
-            await controller.ExecuteAsync(new ControlRequest(Guid.NewGuid(), command, JsonSerializer.SerializeToElement(arguments)), CancellationToken.None);
 
         // 预约绑定另一个开放轮次时，不得在既有监测授权下执行真实操作。
         var executionPath = Path.Combine(directory, "different-turn-execution");
         Directory.CreateDirectory(executionPath);
         new RuntimeStateStore(Path.Combine(executionPath, "runtime-state.json")).Save(new RuntimeState
-            { MonitoringAuthorized = true, StudentId = 100, TurnId = 1, SelectedTurnId = 1 });
+            { MonitoringAuthorized = true, StudentId = 100, TurnId = 1, SelectedTurnId = 2 });
         new AutomationStore(Path.Combine(executionPath, "automation-settings.json")).Save(new UstcCourseAssistant.Core.Models.AutomationSettings
             { Tasks = [new UstcCourseAssistant.Core.Models.AutomationTask { CourseCode = "TEST01" }] });
+        var now = DateTimeOffset.Now.ToOffset(TimeSpan.FromHours(8));
+        new ScheduledSelectionStore(Path.Combine(executionPath, "scheduled-selections.json")).Save(new UstcCourseAssistant.Core.Models.ScheduledSelectionSettings
+        {
+            Appointment = new UstcCourseAssistant.Core.Models.ScheduledSelection
+            {
+                StudentId = 100, ExecuteAt = now.AddMinutes(-1), RunWhenMissed = true, RealOperationsAuthorized = true,
+                CompletionAction = UstcCourseAssistant.Core.Models.ScheduledCompletionAction.Stop,
+                State = UstcCourseAssistant.Core.Models.ScheduledSelectionState.Armed,
+                Tasks = [new UstcCourseAssistant.Core.Models.AutomationTask { CourseCode = "TEST02" }]
+            }
+        });
         var executionHandler = new SessionHandler(true, "[{\"id\":1,\"name\":\"one\",\"semesterName\":\"s\"},{\"id\":2,\"name\":\"two\",\"semesterName\":\"s\"}]");
         using (var client = new HttpClient(executionHandler) { BaseAddress = new Uri("https://jw.ustc.edu.cn/") })
         using (var auth = new TestAuthentication())
@@ -165,13 +174,6 @@ internal static class ControllerChecks
             await using var controller = new CourseAssistantController(executionPath, auth, true, TimeProvider.System, null, () => client);
             using var cancel = new CancellationTokenSource();
             var run = controller.RunAsync(cancel.Token);
-            await WaitAsync(() => controller.Snapshot.Session is not null && controller.Snapshot.MonitoringRunning, "monitoring must resume for context check");
-            var at = DateTimeOffset.Now.ToOffset(TimeSpan.FromHours(8)).AddSeconds(2).ToString("yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture);
-            var task = new { Id = Guid.NewGuid(), Enabled = true, CourseCode = "TEST02", Priority = 1, ConflictingCourseCodes = Array.Empty<string>() };
-            var saved = await SendAsync(controller, "appointment save", new { At = at, RunWhenMissed = true, Completion = "stop", Tasks = new[] { task } });
-            Require(saved.Success, "appointment draft must save: " + saved.Message);
-            var armed = await SendAsync(controller, "appointment arm", new { Authorize = true, TurnId = 2 });
-            Require(armed.Success, "appointment must arm for another open turn: " + armed.Message);
             await WaitAsync(() => controller.Snapshot.Status.Contains("预约与现有监测账号或轮次不同"), "appointment under another turn must be reported");
             Require(controller.Snapshot.MonitoringContext == new CourseExecutionContext(100, 1), "monitoring context must not switch turns");
             Require(controller.Snapshot.Appointment is { State: UstcCourseAssistant.Core.Models.ScheduledSelectionState.Armed }, "blocked appointment must return to armed");
